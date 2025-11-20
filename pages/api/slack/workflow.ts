@@ -285,7 +285,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       console.log('[Workflow] No signature headers found, skipping verification (may be from Slack Workflow)');
     }
 
-    console.log('[Workflow] Request validated, starting background process:', {
+    console.log(`[Workflow-${requestId}] Request validated, starting background process:`, {
       hasInputs: !!body.inputs,
       hasChannel: !!body.channel,
       hasUserId: !!body.user_id,
@@ -295,7 +295,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // 即座に200を返す
     res.status(200).json({ ok: true });
-    console.log('[Workflow] Response sent, background process will continue');
+    console.log(`[Workflow-${requestId}] Response sent, background process will continue`);
 
     // バックグラウンド処理
     const backgroundProcess = (async () => {
