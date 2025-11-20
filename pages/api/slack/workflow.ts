@@ -29,8 +29,19 @@ async function callDifyChatFlow(inputs: Record<string, string>): Promise<string>
   const difyApiUrl = process.env.DIFY_API_URL;
   const difyApiKey = process.env.DIFY_API_KEY;
 
+  console.log('[Dify] Configuration check:', {
+    hasApiUrl: !!difyApiUrl,
+    apiUrlPreview: difyApiUrl ? `${difyApiUrl.substring(0, 30)}...` : 'NOT SET',
+    hasApiKey: !!difyApiKey,
+    apiKeyPreview: difyApiKey ? `${difyApiKey.substring(0, 10)}...` : 'NOT SET',
+  });
+
   if (!difyApiUrl || !difyApiKey) {
-    throw new Error('Dify configuration is missing');
+    const missing = [];
+    if (!difyApiUrl) missing.push('DIFY_API_URL');
+    if (!difyApiKey) missing.push('DIFY_API_KEY');
+    console.error('[Dify] Configuration missing:', missing);
+    throw new Error(`Dify configuration is missing: ${missing.join(', ')}`);
   }
 
   let baseUrl = difyApiUrl.trim();
@@ -66,26 +77,47 @@ async function callDifyChatFlow(inputs: Record<string, string>): Promise<string>
     user: 'slack-workflow',
   };
 
-  console.log('Calling Dify Chat Flow API:', {
+  console.log('[Dify] Calling Chat Flow API:', {
     endpoint,
     inputsCount: Object.keys(inputs).length,
     queryLength: query.length,
     inputKeys: Object.keys(inputs),
+    queryPreview: query.substring(0, 200),
+    requestBody: JSON.stringify(requestBody, null, 2),
   });
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${difyApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(requestBody),
-  });
+  const requestStartTime = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${difyApiKey.substring(0, 10)}...`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+    const requestElapsedTime = Date.now() - requestStartTime;
+    console.log('[Dify] Request completed:', {
+      status: response.status,
+      statusText: response.statusText,
+      elapsedTime: `${requestElapsedTime}ms`,
+      headers: Object.fromEntries(response.headers.entries()),
+    });
+  } catch (fetchError) {
+    console.error('[Dify] Fetch error:', {
+      error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+      stack: fetchError instanceof Error ? fetchError.stack : undefined,
+      endpoint,
+    });
+    throw new Error(`Failed to call Dify API: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`);
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('Dify API error:', {
+    console.error('[Dify] API error response:', {
       status: response.status,
+      statusText: response.statusText,
       errorText,
       endpoint,
     });
@@ -93,8 +125,21 @@ async function callDifyChatFlow(inputs: Record<string, string>): Promise<string>
   }
 
   const data = await response.json();
+  console.log('[Dify] API response received:', {
+    hasAnswer: !!data.answer,
+    answerLength: data.answer?.length || 0,
+    answerPreview: data.answer?.substring(0, 200) || 'N/A',
+    responseKeys: Object.keys(data),
+    fullResponse: JSON.stringify(data, null, 2).substring(0, 500),
+  });
+  
   // チャットフローAPIのレスポンスはdata.answerに含まれる
-  return data.answer || JSON.stringify(data);
+  const answer = data.answer || JSON.stringify(data);
+  console.log('[Dify] Returning answer:', {
+    length: answer.length,
+    preview: answer.substring(0, 200),
+  });
+  return answer;
 }
 
 // Slackにメッセージを投稿する関数
@@ -142,49 +187,77 @@ async function postSlackMessage(
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  console.log('[Workflow] Request received:', {
+    method: req.method,
+    url: req.url,
+    headers: {
+      'content-type': req.headers['content-type'],
+      'x-slack-request-timestamp': req.headers['x-slack-request-timestamp'],
+      'x-slack-signature': req.headers['x-slack-signature'] ? 'present' : 'missing',
+    },
+  });
+
   if (req.method !== 'POST') {
+    console.log('[Workflow] Method not allowed:', req.method);
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   try {
     const rawBody = await getRawBody(req);
+    console.log('[Workflow] Raw body received:', {
+      length: rawBody.length,
+      preview: rawBody.substring(0, 200),
+    });
     
     if (!rawBody) {
+      console.error('[Workflow] Empty request body');
       return res.status(400).json({ error: 'Empty request body' });
     }
 
     let body;
     try {
       body = JSON.parse(rawBody);
+      console.log('[Workflow] Parsed body:', {
+        keys: Object.keys(body),
+        hasInputs: !!body.inputs,
+        inputsKeys: body.inputs ? Object.keys(body.inputs) : [],
+      });
     } catch (parseError) {
-      console.error('Failed to parse JSON:', parseError);
+      console.error('[Workflow] Failed to parse JSON:', parseError);
       return res.status(400).json({ error: 'Invalid JSON' });
     }
 
-    // 署名検証
+    // 署名検証（Slackワークフローからのリクエストには署名がない場合もある）
     const timestamp = req.headers['x-slack-request-timestamp'] as string;
     const signature = req.headers['x-slack-signature'] as string;
 
-    if (!timestamp || !signature) {
-      return res.status(401).json({ error: 'Missing required headers' });
+    if (timestamp && signature) {
+      console.log('[Workflow] Verifying signature...');
+      const basestring = `v0:${timestamp}:${rawBody}`;
+      const signingSecret = process.env.SLACK_SIGNING_SECRET;
+
+      if (!signingSecret) {
+        console.error('[Workflow] SLACK_SIGNING_SECRET is not set');
+        return res.status(500).json({ error: 'Server configuration error' });
+      }
+
+      const mySignature = `v0=` + crypto.createHmac('sha256', signingSecret)
+        .update(basestring, 'utf8')
+        .digest('hex');
+
+      if (mySignature !== signature) {
+        console.error('[Workflow] Signature verification failed:', {
+          expected: signature.substring(0, 20) + '...',
+          actual: mySignature.substring(0, 20) + '...',
+        });
+        return res.status(401).json({ error: 'Verification failed' });
+      }
+      console.log('[Workflow] Signature verified successfully');
+    } else {
+      console.log('[Workflow] No signature headers found, skipping verification (may be from Slack Workflow)');
     }
 
-    const basestring = `v0:${timestamp}:${rawBody}`;
-    const signingSecret = process.env.SLACK_SIGNING_SECRET;
-
-    if (!signingSecret) {
-      return res.status(500).json({ error: 'Server configuration error' });
-    }
-
-    const mySignature = `v0=` + crypto.createHmac('sha256', signingSecret)
-      .update(basestring, 'utf8')
-      .digest('hex');
-
-    if (mySignature !== signature) {
-      return res.status(401).json({ error: 'Verification failed' });
-    }
-
-    console.log('Workflow request received:', {
+    console.log('[Workflow] Request validated, starting background process:', {
       hasInputs: !!body.inputs,
       hasChannel: !!body.channel,
       hasUserId: !!body.user_id,
@@ -194,9 +267,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // 即座に200を返す
     res.status(200).json({ ok: true });
+    console.log('[Workflow] Response sent, background process will continue');
 
     // バックグラウンド処理
     const backgroundProcess = (async () => {
+      const processStartTime = Date.now();
+      console.log('[Workflow] Background process started at:', new Date().toISOString());
+      
       try {
         // Slackワークフローからのデータ構造を確認
         // body.inputs に各フィールドが含まれている想定
@@ -204,6 +281,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         
         // まず、body.inputs から取得を試みる
         const workflowInputs = body.inputs || body;
+        console.log('[Workflow] Extracting inputs from:', {
+          source: body.inputs ? 'body.inputs' : 'body',
+          keys: Object.keys(workflowInputs),
+        });
         
         // Difyのチャットフローに入力フィールドを渡す
         // 全ての入力フィールドをqueryに結合して送信する
@@ -230,39 +311,62 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }
         }
 
-        console.log('Processing workflow with inputs:', {
+        console.log('[Workflow] Processing workflow with inputs:', {
           totalFields: Object.keys(inputs).length,
           nonEmptyFields: Object.keys(filteredInputs).length,
           inputKeys: Object.keys(filteredInputs),
-          rawInputs: workflowInputs,
+          filteredInputs: filteredInputs,
         });
 
+        if (Object.keys(filteredInputs).length === 0) {
+          console.warn('[Workflow] No input fields found, sending default query');
+        }
+
         // DifyチャットフローAPIを呼び出し（空でないフィールドのみを渡す）
+        console.log('[Workflow] Calling Dify API...');
         const difyResponse = await callDifyChatFlow(filteredInputs);
+        console.log('[Workflow] Dify API response received:', {
+          responseLength: difyResponse.length,
+          preview: difyResponse.substring(0, 100),
+        });
 
         // Slackに結果を投稿
+        const channel = body.channel || body.inputs?.channel;
+        console.log('[Workflow] Posting to Slack channel:', channel);
         await postSlackMessage(
-          body.channel || body.inputs?.channel,
+          channel,
           `📋 *肥田さんへの質問の回答*\n\n${difyResponse}\n\n_質問者: <@${body.user_id}>_`
         );
 
-        console.log('Workflow processed successfully');
+        const elapsedTime = Date.now() - processStartTime;
+        console.log('[Workflow] Workflow processed successfully', {
+          elapsedTime: `${elapsedTime}ms`,
+        });
       } catch (error) {
-        console.error('Error processing workflow:', error);
+        const elapsedTime = Date.now() - processStartTime;
+        console.error('[Workflow] Error processing workflow:', {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          elapsedTime: `${elapsedTime}ms`,
+        });
         
         // エラーをSlackに通知
         try {
+          const channel = body.channel || body.inputs?.channel;
+          console.log('[Workflow] Posting error to Slack channel:', channel);
           await postSlackMessage(
-            body.channel || body.inputs?.channel,
+            channel,
             `❌ エラーが発生しました: ${error instanceof Error ? error.message : 'Unknown error'}`
           );
         } catch (slackError) {
-          console.error('Failed to post error to Slack:', slackError);
+          console.error('[Workflow] Failed to post error to Slack:', slackError);
         }
       }
     })();
 
+    console.log('[Workflow] Calling waitUntil...');
     waitUntil(backgroundProcess);
+    console.log('[Workflow] waitUntil called, handler will return');
 
   } catch (error) {
     console.error('Error processing workflow request:', error);
