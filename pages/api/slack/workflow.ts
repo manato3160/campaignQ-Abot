@@ -189,13 +189,19 @@ async function postSlackMessage(
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // 最初に必ずログを出力（リクエストが到達しているか確認）
   const requestId = `req-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+  const timestamp = new Date().toISOString();
+  
+  // 複数のログ出力方法で確実に記録
   console.log(`[Workflow-${requestId}] ====== REQUEST RECEIVED ======`);
   console.log(`[Workflow-${requestId}] Endpoint: /api/slack/workflow`);
+  console.log(`[Workflow-${requestId}] Timestamp: ${timestamp}`);
+  console.log(`[Workflow-${requestId}] Method: ${req.method}`);
+  console.log(`[Workflow-${requestId}] URL: ${req.url}`);
   console.log(`[Workflow-${requestId}] Request received:`, {
     method: req.method,
     url: req.url,
     path: req.url,
-    timestamp: new Date().toISOString(),
+    timestamp: timestamp,
     headers: {
       'content-type': req.headers['content-type'],
       'x-slack-request-timestamp': req.headers['x-slack-request-timestamp'],
@@ -204,6 +210,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       'host': req.headers['host'],
     },
   });
+  
+  // エラーログにも出力（確実に記録されるように）
+  if (req.method !== 'POST') {
+    console.error(`[Workflow-${requestId}] ERROR: Expected POST but got ${req.method}`);
+  }
 
   if (req.method !== 'POST') {
     console.log(`[Workflow-${requestId}] Method not allowed:`, req.method);

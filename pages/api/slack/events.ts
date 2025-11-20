@@ -621,6 +621,95 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return;
     }
 
+    // ワークフローからのメッセージを処理
+    if (event && event.type === 'message' && event.subtype === 'bot_message') {
+      console.log('Bot message event detected:', {
+        channel: event.channel,
+        text: event.text,
+        ts: event.ts,
+        bot_id: event.bot_id,
+      });
+
+      // ワークフローのメッセージかどうかを確認（「新しい質問が投稿されました!」で始まる）
+      if (event.text && event.text.includes('新しい質問が投稿されました!')) {
+        console.log('Workflow message detected, processing...');
+        
+        // 先に200を返す
+        res.status(200).end();
+        
+        // バックグラウンドで処理
+        const workflowProcess = (async () => {
+          try {
+            // メッセージからデータを抽出
+            // メッセージの構造を解析して、各フィールドの値を取得
+            const messageText = event.text || '';
+            
+            // ワークフローのメッセージからデータを抽出する関数
+            // 方法1: JSONデータがメッセージに含まれている場合（推奨）
+            let workflowData: Record<string, string> = {};
+            
+            // <workflow_data>タグで囲まれたJSONを探す
+            const jsonMatch = messageText.match(/<workflow_data>([\s\S]*?)<\/workflow_data>/);
+            if (jsonMatch) {
+              try {
+                workflowData = JSON.parse(jsonMatch[1]);
+                console.log('Extracted workflow data from JSON:', workflowData);
+              } catch (parseError) {
+                console.error('Failed to parse JSON data:', parseError);
+              }
+            } else {
+              // 方法2: メッセージテキストから各フィールドを抽出
+              // 実際のメッセージ構造に合わせて調整が必要
+              const fields = [
+                '概要', '当選者', '応募者情報抽出', '応募者選定情報',
+                '個人情報管理', '問い合わせ内容', 'DM送付', '発送対応',
+                'オプション', '商品カテゴリ', '商品'
+              ];
+              
+              fields.forEach(field => {
+                // フィールド名の後に値が続くパターンを探す
+                const regex = new RegExp(`${field}[：:]([^\\n]+)`, 'g');
+                const match = messageText.match(regex);
+                if (match && match[0]) {
+                  const value = match[0].replace(new RegExp(`${field}[：:]`), '').trim();
+                  if (value) {
+                    workflowData[field] = value;
+                  }
+                }
+              });
+              
+              console.log('Extracted workflow data from text:', workflowData);
+            }
+            
+            // Dify APIを呼び出す（workflow.tsのcallDifyChatFlowと同じロジック）
+            // ここでは簡易的にcallDifyWorkflowを使用
+            if (Object.keys(workflowData).length > 0) {
+              const query = Object.entries(workflowData)
+                .filter(([_, value]) => value && value.trim() !== '')
+                .map(([key, value]) => `${key}: ${value}`)
+                .join('\n');
+              
+              if (query) {
+                const difyResponse = await callDifyWorkflow(query);
+                
+                // Slackに結果を投稿
+                await postSlackMessage(
+                  event.channel,
+                  `📋 *肥田さんへの質問の回答*\n\n${difyResponse}`,
+                  event.ts
+                );
+              }
+            }
+          } catch (error) {
+            console.error('Error processing workflow message:', error);
+          }
+        })();
+        
+        waitUntil(workflowProcess);
+        return;
+      }
+    }
+
     // その他のイベントタイプは正常に受け取ったことを返す
     res.status(200).end();
   } catch (error) {
