@@ -187,44 +187,72 @@ async function postSlackMessage(
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  console.log('[Workflow] Request received:', {
+  // 最初に必ずログを出力（リクエストが到達しているか確認）
+  const requestId = `req-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+  console.log(`[Workflow-${requestId}] ====== REQUEST RECEIVED ======`);
+  console.log(`[Workflow-${requestId}] Endpoint: /api/slack/workflow`);
+  console.log(`[Workflow-${requestId}] Request received:`, {
     method: req.method,
     url: req.url,
+    path: req.url,
+    timestamp: new Date().toISOString(),
     headers: {
       'content-type': req.headers['content-type'],
       'x-slack-request-timestamp': req.headers['x-slack-request-timestamp'],
       'x-slack-signature': req.headers['x-slack-signature'] ? 'present' : 'missing',
+      'user-agent': req.headers['user-agent'],
+      'host': req.headers['host'],
     },
   });
 
   if (req.method !== 'POST') {
-    console.log('[Workflow] Method not allowed:', req.method);
+    console.log(`[Workflow-${requestId}] Method not allowed:`, req.method);
+    console.log(`[Workflow-${requestId}] Expected POST, got ${req.method}`);
+    console.log(`[Workflow-${requestId}] ====== REQUEST ENDED (405) ======`);
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   try {
+    console.log(`[Workflow-${requestId}] Reading request body...`);
     const rawBody = await getRawBody(req);
-    console.log('[Workflow] Raw body received:', {
+    console.log(`[Workflow-${requestId}] Raw body received:`, {
       length: rawBody.length,
       preview: rawBody.substring(0, 200),
     });
     
     if (!rawBody) {
-      console.error('[Workflow] Empty request body');
+      console.error(`[Workflow-${requestId}] Empty request body`);
+      console.log(`[Workflow-${requestId}] ====== REQUEST ENDED (400) ======`);
       return res.status(400).json({ error: 'Empty request body' });
     }
 
     let body;
     try {
       body = JSON.parse(rawBody);
-      console.log('[Workflow] Parsed body:', {
+      console.log(`[Workflow-${requestId}] Parsed body:`, {
         keys: Object.keys(body),
+        type: body.type,
         hasInputs: !!body.inputs,
         inputsKeys: body.inputs ? Object.keys(body.inputs) : [],
       });
     } catch (parseError) {
-      console.error('[Workflow] Failed to parse JSON:', parseError);
+      console.error(`[Workflow-${requestId}] Failed to parse JSON:`, parseError);
+      console.log(`[Workflow-${requestId}] ====== REQUEST ENDED (400) ======`);
       return res.status(400).json({ error: 'Invalid JSON' });
+    }
+
+    // Slack URL verification (challenge) - 署名検証の前に処理
+    if (body.type === 'url_verification') {
+      console.log(`[Workflow-${requestId}] URL verification challenge received`);
+      if (!body.challenge) {
+        console.error(`[Workflow-${requestId}] Missing challenge parameter`);
+        console.log(`[Workflow-${requestId}] ====== REQUEST ENDED (400) ======`);
+        return res.status(400).json({ error: 'Missing challenge parameter' });
+      }
+      // challengeの値をそのままプレーンテキストで返す（Slackの仕様）
+      console.log(`[Workflow-${requestId}] Returning challenge:`, body.challenge);
+      console.log(`[Workflow-${requestId}] ====== REQUEST ENDED (200 - Challenge) ======`);
+      return res.status(200).send(body.challenge);
     }
 
     // 署名検証（Slackワークフローからのリクエストには署名がない場合もある）
@@ -364,12 +392,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     })();
 
-    console.log('[Workflow] Calling waitUntil...');
+    console.log(`[Workflow-${requestId}] Calling waitUntil...`);
     waitUntil(backgroundProcess);
-    console.log('[Workflow] waitUntil called, handler will return');
+    console.log(`[Workflow-${requestId}] waitUntil called, handler will return`);
+    console.log(`[Workflow-${requestId}] ====== HANDLER RETURNING ======`);
 
   } catch (error) {
-    console.error('Error processing workflow request:', error);
+    console.error(`[Workflow-${requestId}] ====== TOP LEVEL ERROR ======`);
+    console.error(`[Workflow-${requestId}] Error processing workflow request:`, {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    console.log(`[Workflow-${requestId}] ====== REQUEST ENDED (500) ======`);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
