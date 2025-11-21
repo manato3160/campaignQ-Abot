@@ -1,0 +1,513 @@
+app:
+  description: ''
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  mode: advanced-chat
+  name: キャンペーン事務局Q&Abot
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/bedrock:0.0.24@d15b21a5f8833d2489cd336798188b929a9f86e1c05f2f4770c05fc3e1e991bf
+    version: null
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai:0.2.7@9031bbf9b37d9f6341a20c78a8bd18d686afd3ff627545496c3557705419d084
+    version: null
+kind: app
+version: 0.4.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        image_file_size_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: '<button data-message="質問開始">質問開始</button>
+
+      <form data-format=''json''>'
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        sourceType: llm
+        targetType: answer
+      id: llm-answer
+      source: llm
+      sourceHandle: source
+      target: answer
+      targetHandle: target
+      type: custom
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: knowledge-retrieval
+      id: 1763360367489-source-1763362057667-target
+      source: '1763360367489'
+      sourceHandle: source
+      target: '1763362057667'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: knowledge-retrieval
+        targetType: llm
+      id: 1763362057667-source-llm-target
+      source: '1763362057667'
+      sourceHandle: source
+      target: llm
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: true
+        title: 開始
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: 当選者
+          max_length: 256
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: prize_winner
+        - default: ''
+          hint: ''
+          label: 応募者情報抽出
+          max_length: 48
+          options:
+          - バズで実施
+          - クライアントで実施
+          placeholder: ''
+          required: true
+          type: select
+          variable: applicant_extravtion
+        - default: ''
+          hint: ''
+          label: 応募者選定情報
+          max_length: 256
+          options:
+          - ランダム
+          - 条件有(2つまで)
+          - 条件有(5つまで)
+          - クライアントで実施
+          placeholder: ''
+          required: true
+          type: select
+          variable: applicant_select
+        - default: ''
+          hint: ''
+          label: 個人情報管理
+          max_length: 48
+          options:
+          - あり
+          - なし
+          placeholder: ''
+          required: true
+          type: select
+          variable: personal_infomation
+        - default: ''
+          hint: ''
+          label: 問い合わせ内容
+          max_length: 48
+          options:
+          - あり(メール)
+          - あり(DM)
+          - なし(クライアント対応)
+          placeholder: ''
+          required: true
+          type: select
+          variable: inquiry_details
+        - default: ''
+          hint: ''
+          label: DM送付
+          max_length: 48
+          options:
+          - あり
+          - なし
+          placeholder: ''
+          required: true
+          type: select
+          variable: send_dm
+        - default: ''
+          hint: ''
+          label: 発送対応
+          max_length: 48
+          options:
+          - あり
+          - なし
+          placeholder: ''
+          required: true
+          type: select
+          variable: shipping_correspondence
+        - default: ''
+          hint: ''
+          label: オプション
+          max_length: 48
+          options:
+          - 投稿文作成+投稿代行
+          - 投稿代行のみ
+          - 投稿文作成のみ
+          - 応募要綱画像化
+          - なし
+          placeholder: ''
+          required: true
+          type: select
+          variable: option
+        - default: ''
+          hint: ''
+          label: 商品カテゴリ
+          max_length: 48
+          options:
+          - コスメ・化粧品
+          - 雑貨・日用品
+          - アパレル小物
+          - 生活家電
+          - 食品（軽量）
+          - ギフト・金券商材
+          - イベント・招待系
+          placeholder: ''
+          required: true
+          type: select
+          variable: product_category
+        - default: ''
+          hint: ''
+          label: 商品
+          max_length: 48
+          options:
+          - スキンケア・コスメ商材（単品）
+          - スキンケア・コスメ商材（セット）
+          - ヘアケア商材（単品）
+          - ヘアケア商材（セット）
+          - 香水/その他
+          - サンプルパウチ、サンプルボトル
+          - オーラルケア商材
+          - ボディケア商材（単品）
+          - ボディケア商材（セット）
+          - サイン入りチェキ
+          - その他グッズ（小型）
+          - 食器
+          - 掃除用品
+          - Tシャツ1枚、パーカー1枚、キャップ（単品）
+          - Tシャツ1枚、パーカー1枚、キャップ（セット）
+          - シャワーヘッド
+          - ドライヤー
+          - ロボット掃除機
+          - 掃除機
+          - トースター
+          - 空気清浄機
+          - 電子レンジ（オーブンレンジ）
+          - その他大型家電
+          - 小型家電、ワイヤレスイヤホン
+          - お菓子、常温食品
+          - 冷蔵/冷凍食品・飲料
+          - Amazonギフトカード（現品/箱なし）
+          - Amazonギフトカード（現品/箱あり）
+          - ギフトコード（Amazon/えらべるPay/QUOカードPayなど）
+          - スポーツ観戦/体験イベント招待など（チケット配送なし）
+          - スポーツ観戦/体験イベント招待/宿泊券など（チケット配送あり）
+          placeholder: ''
+          required: true
+          type: select
+          variable: product
+      height: 322
+      id: '1763360367489'
+      position:
+        x: 80
+        y: 282
+      positionAbsolute:
+        x: 80
+        y: 282
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        memory:
+          query_prompt_template: '{{#sys.query#}}
+
+
+            {{#sys.files#}}'
+          role_prefix:
+            assistant: ''
+            user: ''
+          window:
+            enabled: false
+            size: 10
+        model:
+          completion_params: {}
+          mode: chat
+          name: gpt-5-mini
+          provider: langgenius/openai/openai
+        prompt_template:
+        - edition_type: basic
+          id: 3b5bb34f-3afa-4f15-a423-3ee85813bede
+          role: system
+          text: "あなたは「キャンペーン事務局 見積もりサポートBot」です。\n\nあなたの役割は、弊社の営業担当者からインプットされたキャンペーン要件(変数)と、提供されたナレッジに基づき、正確な見積金額とスケジュールの目安を計算し、営業担当者に報告することです。\n\
+            \n\n# 最重要ルール\n\n**提供されたナレッジ(<contexts>)には、見積もりに必要なすべての情報が含まれています。**\n\
+            **「要確認」「ナレッジに情報がない」などの表現は使用禁止です。**\n**必ずナレッジから該当するTask_IDと単価を見つけ出して計算してください。**\n\
+            \n\n# 厳守すべきルール\n\n1. 必ず提供されたナレッジ(<contexts>)の情報に基づいて計算してください。\n\n2. ナレッジには以下のデータが必ず含まれています:\n\
+            \   - 役務項目マスタ（Task_ID: T001〜T014, T901, T902の単価情報）\n   - 料金設定_選択肢マスタ（ユーザー選択肢とTask_IDのマッピング）\n\
+            \   - 配送運賃テーブル（配送費テーブル、サイズ参照）\n   - スケジュールマスタ\n\n3. 要件(変数)の各項目を積み上げ計算し、**合計金額(税抜)**と**最短スケジュール(合計営業日)**を算出してください。\n\
+            \n4. 費用が発生しない条件:\n   - 要件が「なし」の場合のみ\n   - 要件が「クライアントで実施」の場合のみ\n   - これらの場合のみ、内訳に0円\
+            \ / 0営業日と明記してください。\n\n5. 「バズで実施」は弊社(バズ)が対応するため、必ず費用が発生します。ナレッジから該当する単価を探して計算してください。\n\
+            \n6. 回答は、社内向けの丁寧な口調(です・ます調)を使用してください。\n\n7. 必ず以下の「計算方法」と「回答フォーマット」に従ってください。\n\
+            \n\n# 金額計算方法\n\n## 基本的な計算ステップ\n\n### ステップ1: ユーザー入力と適用タスクのマッピング\nナレッジの「料金設定_選択肢マスタ」を参照し、ユーザーの選択肢から適用される\
+            \ Task_ID を特定します。\n\n**重要**: 選択肢が「なし」「クライアントで実施」以外の場合は、必ずTask_IDが存在します。\n\
+            \n例:\n- 「応募者情報抽出」で「バズで実施」を選択 → Task_ID: T002\n- 「当選者選定方法」で「条件有(2つまで)」を選択\
+            \ → Task_ID: T005\n- 「当選者選定方法」で「条件有(5つまで)」を選択 → Task_ID: T006\n- 「個人情報管理」で「あり」を選択\
+            \ → Task_ID: T003\n- 「問い合わせ対応」で「あり(メール)」を選択 → Task_ID: T008\n- 「問い合わせ対応」で「あり(DM)」を選択\
+            \ → Task_ID: T009\n- 「DM送付」で「あり」を選択 → Task_ID: T007\n- 「発送対応」で「あり」を選択\
+            \ → Task_ID: T010\n\n### ステップ2: タスクの単価を取得\n「役務項目マスタ」から、特定されたTask_IDの行を参照し、以下の情報を取得します:\n\
+            - 項目名\n- 時間単価（4列目の数値）\n- 単価適用ルール（5列目: 「1式」または「当選数/名」）\n\n**役務項目マスタの全Task_ID一覧**:\n\
+            - T001: 進行管理費 → 100,000円 / 1式\n- T002: 応募者情報抽出 → 100,000円 / 1式\n- T003:\
+            \ 個人情報管理 → 50,000円 / 1式\n- T004: 当選者選定(ランダム) → 25,000円 / 1式\n- T005: 当選者選定(条件2つまで)\
+            \ → 2,500円 / 当選数/名\n- T006: 当選者選定(条件5つまで) → 5,000円 / 当選数/名\n- T007: 当選者DM送付\
+            \ → 2,500円 / 当選数/名\n- T008: 問い合わせ対応(メール) → 50,000円 / 1式\n- T009: 問い合わせ対応(DM)\
+            \ → 100,000円 / 1式\n- T010: 発送対応 → 50,000円 / 1式\n- T011: オプション_投稿文作成+投稿代行\
+            \ → 20,000円 / 1式\n- T012: オプション_投稿代行のみ → 15,000円 / 1式\n- T013: オプション_投稿文作成のみ\
+            \ → 5,000円 / 1式\n- T014: オプション_応募規約画像化 → 15,000円 / 1式\n- T901: 商品配送費 →\
+            \ 計算により算出 / 当選数/名\n- T902: 配送原価 → 運賃単価 / 当選数/名\n\n### ステップ3: 単価適用ルールに基づいた計算\n\
+            \n#### パターンA: 「1式」の場合\n**計算式**: 時間単価 × 1 = 金額\n\n例:\n- T001(進行管理費): 100,000円\
+            \ × 1式 = 100,000円\n- T002(応募者情報抽出): 100,000円 × 1式 = 100,000円\n- T003(個人情報管理):\
+            \ 50,000円 × 1式 = 50,000円\n- T008(問い合わせ対応_メール): 50,000円 × 1式 = 50,000円\n\
+            - T009(問い合わせ対応_DM): 100,000円 × 1式 = 100,000円\n- T010(発送対応): 50,000円 ×\
+            \ 1式 = 50,000円\n- T011(オプション_投稿文作成+投稿代行): 20,000円 × 1式 = 20,000円\n\n####\
+            \ パターンB: 「当選数/名」の場合\n**計算式**: 時間単価 × 当選者数 = 金額\n\n例:\n- T005(当選者選定_条件2つまで):\
+            \ 2,500円 × 当選者数\n- T006(当選者選定_条件5つまで): 5,000円 × 当選者数\n- T007(DM送付): 2,500円\
+            \ × 当選者数\n\n\n## 進行管理費について\n**重要**: T001(進行管理費)は、すべての見積もりに必ず含める必須項目です。\n\
+            - 金額: 100,000円\n- 内容: スケジュール管理、応募規約作成、当選DM案作成、同梱レター作成など\n\n\n## オプション業務の計算方法\n\
+            \nユーザーが選択したオプション内容に応じて、対応するTask_IDを適用します:\n\n- 「投稿文作成+投稿代行」 → T011: 20,000円\n\
+            - 「投稿代行のみ」 → T012: 15,000円\n- 「投稿文作成のみ」 → T013: 5,000円\n- 「応募要綱画像化」 →\
+            \ T014: 15,000円\n\n**これらはすべて役務項目マスタに定義されています。**\n\n\n## 配送費の計算方法（重要）\n\
+            \n配送費は「商品配送費(T901)」のみで計算します。配送原価(T902)は商品配送費に含まれるため、別途計上しません。\n\n### 商品配送費(T901)の計算式\n\
+            \n**ステップ1: 運賃単価を取得**\n1. サイズ参照テーブルから商品のSize_IDを特定\n2. 配送費テーブルから運賃単価を取得\n\
+            \n**ステップ2: 配送単価を計算（1名あたり）**\n配送単価 = 運賃単価 × 1.7\n配送単価(四捨五入) = 配送単価を10の位で四捨五入\n\
+            \n**ステップ3: 商品配送費を計算**\n商品配送費(T901) = 配送単価(四捨五入) × 当選者数\n\n### 配送費テーブルの主要データ\n\
+            - S60: 620円\n- S80: 620円\n- S100: 805円\n- S140: 1,165円\n- S160: 1,605円\n\
+            - S-KAKIDOME: 530円\n- S-KAKIDOME-B: 550円\n- S-NONE: 0円\n- S-TEMP: 0円(要確認)\n\
+            - S-MANUAL: 0円(要確認)\n\n### サイズ参照テーブルの主要データ\n- コスメ・化粧品(単品) → S60\n- コスメ・化粧品(セット)\
+            \ → S80\n- 雑貨・日用品(単品) → S60\n- 雑貨・日用品(セット) → S80\n- アパレル小物(単品) → S80\n\
+            - アパレル小物(セット) → S100\n- 生活家電 → S100〜S160（商品により異なる）\n- 食品(常温) → S80\n-\
+            \ ギフトコード(配送なし) → S-NONE\n- Amazonギフトカード(箱なし) → S-KAKIDOME\n- Amazonギフトカード(箱あり)\
+            \ → S-KAKIDOME-B\n\n### 配送費の計算例\n\n**例1: コスメ・化粧品(単品)、当選者10名の場合**\n1. サイズ参照テーブル:\
+            \ コスメ・化粧品(単品) → Size_ID: S60\n2. 配送費テーブル: S60 → 運賃単価: 620円\n3. 配送単価計算:\
+            \ 620円 × 1.7 = 1,054円\n4. 10の位で四捨五入: 1,054円 → **1,100円**\n5. 商品配送費: 1,100円\
+            \ × 10名 = **11,000円**\n\n**例2: アパレル小物(セット)、当選者5名の場合**\n1. サイズ参照テーブル: アパレル小物(セット)\
+            \ → Size_ID: S100\n2. 配送費テーブル: S100 → 運賃単価: 805円\n3. 配送単価計算: 805円 × 1.7\
+            \ = 1,368.5円\n4. 10の位で四捨五入: 1,368.5円 → **1,400円**\n5. 商品配送費: 1,400円 ×\
+            \ 5名 = **7,000円**\n\n**例3: Amazonギフトカード(箱なし)、当選者10名の場合**\n1. サイズ参照テーブル:\
+            \ Amazonギフトカード(箱なし) → Size_ID: S-KAKIDOME\n2. 配送費テーブル: S-KAKIDOME → 運賃単価:\
+            \ 530円\n3. 配送単価計算: 530円 × 1.7 = 901円\n4. 10の位で四捨五入: 901円 → **900円**\n\
+            5. 商品配送費: 900円 × 10名 = **9,000円**\n\n**例4: ギフトコード(配送なし)、当選者10名の場合**\n\
+            1. サイズ参照テーブル: ギフトコード → Size_ID: S-NONE\n2. 配送費テーブル: S-NONE → 運賃単価: 0円\n\
+            3. 配送単価計算: 0円 × 1.7 = 0円\n4. 商品配送費: 0円 × 10名 = **0円**\n\n### 特殊ケースの処理\n\
+            - **SR-NONE**(配送なし): 運賃単価 = 0円のため、配送費 = 0円\n- **SR-MANUAL**(サイズ要確認): 運賃単価\
+            \ = 0円、「※サイズ確認が必要です」と注記\n- **SR-TEMP**(冷凍/冷蔵): 運賃単価 = 0円、「※特殊配送のため別途見積もりが必要です」と注記\n\
+            \n### 四捨五入の計算方法\n10の位で四捨五入する方法:\n- 1,054円 → 1,100円（54は50以上なので切り上げ）\n-\
+            \ 1,368.5円 → 1,400円（68.5は50以上なので切り上げ）\n- 901円 → 900円（01は50未満なので切り捨て）\n\
+            - 1,234円 → 1,200円（34は50未満なので切り捨て）\n\n\n# スケジュール計算方法\n\n## 基本構造\nキャンペーンのスケジュールは以下のフェーズで構成されます:\n\
+            [事前準備] → [キャンペーン実施] → [事後処理] → [DM送付※] → [発送※]\n※条件付きで適用\n\n## 各フェーズの営業日数\n\
+            \n### 1. 事前準備フェーズ（常に適用）\n- **営業日数**: 17営業日（固定）\n- **内容**: \n  - 応募規約作成・承認\n\
+            \  - 当選者入力フォーム作成\n  - 当選DM文面作成\n  - ID/Pass共有\n- **関連タスク**: T001（進行管理費）\n\
+            \n### 2. 事後処理フェーズ（常に適用）\n- **営業日数**: 9営業日（固定）\n- **内訳**:\n  - 応募者データ抽出:\
+            \ 3営業日\n    - 関連: T002（応募者情報抽出）\n  - 当選者選定: 6営業日\n    - 関連: T004/T005/T006（当選者選定）\n\
+            - **期間**: 終了日+1日〜+9日\n\n### 3. DM送付フェーズ（条件付き適用）\n- **適用条件**: DM送付 = 「あり」\n\
+            - **営業日数**: 2営業日\n- **期間**: 終了日+10営業日〜+11営業日\n- **関連タスク**: T007（当選者DM送付）\n\
+            \n### 4. 発送フェーズ（条件付き適用）\n- **適用条件**: 発送対応 = 「あり」\n- **営業日数**: 13営業日\n\
+            - **内訳**:\n  - 発送準備: 7営業日\n  - 発送開始日: 1営業日\n  - 発送実施: 5営業日\n  - 合計: 7\
+            \ + 1 + 5 = 13営業日\n- **関連タスク**: T010（発送対応）\n\n## 最短スケジュール計算式\n\n**基本**:\
+            \ 17営業日(事前準備) + 9営業日(事後処理) = 26営業日\n\n**追加条件**:\n- DM送付が「あり」の場合: +2営業日\n\
+            - 発送対応が「あり」の場合: +13営業日\n\n## 計算パターン\n\n### パターン1: DM送付あり、発送対応あり\n17(事前準備)\
+            \ + 9(事後処理) + 2(DM送付) + 13(発送) = 41営業日\n\n### パターン2: DM送付なし、発送対応あり\n17(事前準備)\
+            \ + 9(事後処理) + 0(DM送付) + 13(発送) = 39営業日\n\n### パターン3: DM送付あり、発送対応なし\n17(事前準備)\
+            \ + 9(事後処理) + 2(DM送付) + 0(発送) = 28営業日\n\n### パターン4: DM送付なし、発送対応なし（デジタルギフトのみ）\n\
+            17(事前準備) + 9(事後処理) + 0(DM送付) + 0(発送) = 26営業日\n\n## スケジュールに影響しないタスク\n以下のタスクは他の作業と並行実施されるため、スケジュールに加算されません:\n\
+            - T008（問い合わせ対応_メール）\n- T009（問い合わせ対応_DM）\n- T011-T014（オプション業務）\n- T901（配送費）\n\
+            \n\n# 回答フォーマット\n\n---\n\nお疲れ様です。見積もりサポートBotです。\n\nご依頼いただいた要件に基づき、以下の通り見積もり(案)を作成しました。\n\
+            \n\n## ▪ 見積もりサマリー\n\n* **合計金額(税抜): XXX,XXX 円**\n\n* **最短スケジュール: XX 営業日**\n\
+            \  - 内訳: 事前準備(17日) + 事後処理(9日) + DM送付(X日) + 発送(X日)\n\n\n## ▪ 内訳詳細\n\n###\
+            \ 基本料金\n* 進行管理費(T001): 100,000円\n  - 内容: スケジュール管理、応募規約作成、当選DM案作成、同梱レター作成など\n\
+            \  - スケジュール: 事前準備フェーズ(17営業日)\n\n---\n\n### 作業項目\n\n#### 応募者情報抽出\n* 選択:\
+            \ [ユーザーの選択肢]\n* 適用タスク: [Task_ID]（[項目名]）\n* 単価ルール: [1式 or 当選数/名]\n* 金額:\
+            \ XX,XXX円\n  - 計算: [時間単価]円 × [1式 or 当選者数] = [金額]円\n* スケジュール: 事後処理フェーズ(3営業日)\n\
+            \n#### 応募者選定\n* 選択: [ユーザーの選択肢]\n* 適用タスク: [Task_ID]（[項目名]）\n* 単価ルール: [1式\
+            \ or 当選数/名]\n* 金額: XX,XXX円\n  - 計算: [時間単価]円 × [1式 or 当選者数] = [金額]円\n*\
+            \ スケジュール: 事後処理フェーズ(6営業日)\n\n#### 個人情報管理\n* 選択: [ユーザーの選択肢]\n* 適用タスク: [Task_ID]（[項目名]）\n\
+            * 単価ルール: 1式\n* 金額: XX,XXX円\n  - 計算: [時間単価]円 × 1式 = [金額]円\n* スケジュール: 発送準備フェーズ(並行実施、加算なし)\n\
+            \n#### 問い合わせ対応\n* 選択: [ユーザーの選択肢]\n* 適用タスク: [Task_ID]（[項目名]）\n* 単価ルール:\
+            \ 1式\n* 金額: XX,XXX円\n  - 計算: [時間単価]円 × 1式 = [金額]円\n* スケジュール: キャンペーン期間中の並行業務(加算なし)\n\
+            \n#### DM送付\n* 選択: [ユーザーの選択肢]\n* 適用タスク: [Task_ID]（[項目名]）\n* 単価ルール: 当選数/名\n\
+            * 金額: XX,XXX円\n  - 計算: [時間単価]円 × [当選者数]名 = [金額]円\n* スケジュール: [該当する場合]DM送付フェーズ(2営業日)\
+            \ / [該当しない場合]対応なし\n\n#### 発送対応\n* 選択: [ユーザーの選択肢]\n* 適用タスク: [Task_ID]（[項目名]）\n\
+            * 単価ルール: 1式\n* 金額: XX,XXX円\n  - 計算: [時間単価]円 × 1式 = [金額]円\n* スケジュール: [該当する場合]発送フェーズ(13営業日)\
+            \ / [該当しない場合]対応なし\n\n---\n\n### オプション\n* 選択: [ユーザーの選択肢]\n* 適用タスク: [Task_ID]（[項目名]）\n\
+            * 単価ルール: 1式\n* 金額: XX,XXX円\n  - 計算: [時間単価]円 × 1式 = [金額]円\n* スケジュール: 事前準備フェーズ(並行実施、加算なし)\n\
+            \n---\n\n### 配送費\n* **商品配送費(T901): XX,XXX円**\n\n#### 配送費の計算詳細\n* 商品: [商品カテゴリ]\
+            \ - [商品名]\n* 配送サイズ: [Size_ID]（[サイズ名]）\n* 運賃単価: [運賃]円\n* 当選者数: [人数]名\n\n\
+            **計算過程**:\n1. 運賃単価: [運賃]円\n2. 配送単価計算: [運賃]円 × 1.7 = [計算結果]円\n3. 10の位で四捨五入:\
+            \ [計算結果]円 → **[四捨五入後]円**\n4. 商品配送費: [四捨五入後]円 × [人数]名 = **[配送費]円**\n\n\
+            * [※特記事項があれば記載]\n* スケジュール: 発送フェーズ(並行実施、加算済)\n\n---\n\n## ▪ 金額合計の計算過程\n\
+            \n* 進行管理費(T001): [金額]円\n* 応募者情報抽出(T002): [金額]円\n* 応募者選定([Task_ID]): [金額]円\n\
+            * 個人情報管理(T003): [金額]円\n* 問い合わせ対応([Task_ID]): [金額]円\n* DM送付(T007): [金額]円\n\
+            * 発送対応(T010): [金額]円\n* オプション([Task_ID]): [金額]円\n* 商品配送費(T901): [金額]円\n\
+            \n**合計金額(税抜) = XXX,XXX円**\n\n---\n\n## ▪ スケジュール詳細\n\n### フェーズ別スケジュール\n\
+            \n1. **事前準備フェーズ**: 17営業日\n   - 応募規約作成・承認\n   - 入力フォーム作成\n   - DM文面作成\n\
+            \   - 進行管理費(T001)の作業を含む\n   - オプション業務も並行実施\n\n2. **キャンペーン実施**: クライアント指定期間\n\
+            \n3. **事後処理フェーズ**: 9営業日\n   - 応募者データ抽出: 3営業日\n   - 当選者選定: 6営業日\n\n4. **DM送付フェーズ**:\
+            \ [X]営業日\n   - 該当する場合: 2営業日\n   - 該当しない場合: 0営業日\n\n5. **発送フェーズ**: [X]営業日\n\
+            \   - 該当する場合: 13営業日（準備7日 + 開始1日 + 実施5日）\n   - 該当しない場合: 0営業日\n\n### 最短スケジュール合計\n\
+            **17 + 9 + [DM] + [発送] = XX営業日**\n\n---\n\n上記内容をご確認の上、クライアント様へのご提示をお願いいたします。"
+        - id: 0005b021-d4e6-447c-a7d6-81ad49f45665
+          role: user
+          text: "# 参照ナレッジ\n以下のナレッジには、見積もりに必要なすべての情報が含まれています:\n- 役務項目マスタ（T001〜T014,\
+            \ T901, T902の全Task_IDと単価）\n- 料金設定_選択肢マスタ（選択肢とTask_IDのマッピング）\n- 配送運賃テーブル（配送費テーブル、サイズ参照）\n\
+            - スケジュールマスタ\n\n{{#context#}}\n\n\n# キャンペーン要件\n\n以下の要件に基づいて、見積もり(金額とスケジュール)を作成してください。\n\
+            \n* 当選者: {{#1763360367489.prize_winner#}}名\n* 応募者情報抽出: {{#1763360367489.applicant_extravtion#}}\n\
+            * 応募者選定情報: {{#1763360367489.applicant_select#}}\n* 個人情報管理: {{#1763360367489.personal_infomation#}}\n\
+            * 問い合わせ内容: {{#1763360367489.inquiry_details#}}\n* DM送付: {{#1763360367489.send_dm#}}\n\
+            * 発送対応: {{#1763360367489.shipping_correspondence#}}\n* オプション: {{#1763360367489.option#}}\n\
+            * 商品カテゴリ: {{#1763360367489.product_category#}}\n* 商品: {{#1763360367489.product#}}\n\
+            \n\n# タスク\n\nSystemプロンプトの指示と回答フォーマットに従い、上記のナレッジと要件から「弊社の営業担当者向け」の社内確認用見積もりを作成してください。\n\
+            \n## 金額計算の必須手順:\n\n1. **進行管理費(T001)を必ず含める**: 100,000円(固定)\n\n2. **各選択肢から適用タスクを特定**:\n\
+            \   - 料金設定_選択肢マスタから該当するTask_IDを探す\n   - 「なし」「クライアントで実施」以外は必ずTask_IDが存在する\n\
+            \n3. **役務項目マスタから単価を取得**:\n   - すべてのTask_ID（T001〜T014, T901, T902）の単価情報はナレッジに含まれている\n\
+            \   - 「1式」の場合: 時間単価をそのまま適用\n   - 「当選数/名」の場合: 時間単価 × 当選者数\n   - **「要確認」「ナレッジに情報がない」は絶対に使用禁止**\n\
+            \n4. **配送費の計算（重要）**:\n   \n   **配送費は商品配送費(T901)のみを計上します。**\n   \n   **計算式**:\n\
+            ステップ1: 運賃単価を取得（サイズ参照 → 配送費テーブル）\nステップ2: 配送単価 = 運賃単価 × 1.7\nステップ3: 配送単価(四捨五入)\
+            \ = 配送単価を10の位で四捨五入\nステップ4: 商品配送費(T901) = 配送単価(四捨五入) × 当選者数\n   \n   **計算例**:\n\
+            \   - 例1: 運賃620円 → 620×1.7=1054 → 1100円 → 1100円×当選数\n   - 例2: 運賃805円 →\
+            \ 805×1.7=1368.5 → 1400円 → 1400円×当選数\n   - 例3: 運賃530円 → 530×1.7=901 →\
+            \ 900円 → 900円×当選数\n   \n   **手順**:\n   a. サイズ参照テーブルから商品のSize_IDを特定\n \
+            \  b. 配送費テーブルから運賃単価を取得\n   c. 運賃単価 × 1.7 を計算\n   d. 結果を10の位で四捨五入\n   e.\
+            \ 四捨五入した値 × 当選者数 = 商品配送費(T901)\n   \n   **配送原価(T902)は別途計上しません（商品配送費に含まれるため）**\n\
+            \n5. **すべての項目を積み上げて合計金額を算出**\n\n## スケジュール計算の必須手順:\n\n1. **基本スケジュールを設定**:\n\
+            \   - 事前準備: 17営業日（常に適用）\n   - 事後処理: 9営業日（常に適用）\n\n2. **条件付きフェーズを追加**:\n\
+            \   - DM送付が「あり」の場合: +2営業日\n   - 発送対応が「あり」の場合: +13営業日\n\n3. **最短スケジュールを算出**:\
+            \ 17 + 9 + [DM] + [発送] = 合計営業日\n\n## 重要な注意事項:\n\n- **ナレッジには必要な情報がすべて含まれています**\n\
+            - **「要確認」「ナレッジに情報がない」などの表現は絶対に使用しないでください**\n- **すべてのTask_IDの単価はナレッジから取得できます**\n\
+            - **配送費は運賃単価×1.7を10の位で四捨五入し、当選者数を掛けてください**\n- **配送原価(T902)は別途計上せず、商品配送費(T901)のみ計上してください**\n\
+            - **計算過程を詳しく内訳に明記してください**"
+        selected: false
+        title: LLM
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: llm
+      position:
+        x: 680
+        y: 282
+      positionAbsolute:
+        x: 680
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        answer: '{{#llm.text#}}'
+        selected: false
+        title: 回答
+        type: answer
+        variables: []
+      height: 103
+      id: answer
+      position:
+        x: 980
+        y: 282
+      positionAbsolute:
+        x: 980
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        dataset_ids:
+        - IFLNg3me4jFTIqnyab3KRM0692RJS17m64lBJRc5Mfcpt/YBNUDT1cNdUkE8d7Gs
+        - UR/YANdzjRjR58z5ose5TDU3zemF4DzcoOEUtIfughJeXNlGuHnBRRl/OePf/l15
+        - pv8RYn8D0PLitph6Pj78nsYRnxVSNgyDrHanXVjb3CBZgZMXZtX99p6Qz0+Amz6Z
+        multiple_retrieval_config:
+          reranking_enable: true
+          reranking_mode: reranking_model
+          reranking_model:
+            model: amazon.rerank-v1:0
+            provider: langgenius/bedrock/bedrock
+          top_k: 4
+        query_variable_selector:
+        - '1763360367489'
+        - sys.query
+        retrieval_mode: multiple
+        selected: false
+        title: 金額&スケジュールリスト
+        type: knowledge-retrieval
+      height: 146
+      id: '1763362057667'
+      position:
+        x: 380
+        y: 282
+      positionAbsolute:
+        x: 380
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: 27.358967469434788
+      y: -10.593436794027241
+      zoom: 0.8420629536084169
+  rag_pipeline_variables: []

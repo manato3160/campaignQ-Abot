@@ -24,7 +24,8 @@ function getRawBody(req: NextApiRequest): Promise<string> {
   });
 }
 
-// DifyチャットフローAPIを呼び出す関数（workflow.tsと同じロジック）
+// DifyチャットフローAPIを呼び出す関数
+// YMLファイルの開始ノード(1763360367489)の変数名にマッピング
 async function callDifyChatFlow(inputs: Record<string, string>): Promise<string> {
   const difyApiUrl = process.env.DIFY_API_URL;
   const difyApiKey = process.env.DIFY_API_KEY;
@@ -60,28 +61,69 @@ async function callDifyChatFlow(inputs: Record<string, string>): Promise<string>
     endpoint = `${baseUrl}/${apiVersion}/chat-messages`;
   }
 
-  // チャットフローでは、全ての入力フィールドをqueryに結合して送信
-  // 空の値を除外して、見やすい形式で結合
-  const queryParts = Object.entries(inputs)
+  // 日本語キー名をDifyチャットフローの変数名にマッピング
+  // YMLファイルの開始ノード(1763360367489)の変数定義に基づく
+  const variableMapping: Record<string, string> = {
+    '当選者': 'prize_winner',
+    '応募者情報抽出': 'applicant_extravtion', // YMLのtypoに合わせる
+    '応募者選定情報': 'applicant_select',
+    '個人情報管理': 'personal_infomation', // YMLのtypoに合わせる
+    '問い合わせ内容': 'inquiry_details',
+    'DM送付': 'send_dm',
+    '発送対応': 'shipping_correspondence',
+    'オプション': 'option',
+    '商品カテゴリ': 'product_category',
+    '商品': 'product',
+    // 念のため、英語キーもそのまま使用可能にする
+    'prize_winner': 'prize_winner',
+    'applicant_extravtion': 'applicant_extravtion',
+    'applicant_select': 'applicant_select',
+    'personal_infomation': 'personal_infomation',
+    'inquiry_details': 'inquiry_details',
+    'send_dm': 'send_dm',
+    'shipping_correspondence': 'shipping_correspondence',
+    'option': 'option',
+    'product_category': 'product_category',
+    'product': 'product',
+  };
+
+  // 日本語キーを英語変数名に変換
+  const difyInputs: Record<string, string> = {};
+  for (const [key, value] of Object.entries(inputs)) {
+    if (value && value.trim() !== '') {
+      const variableName = variableMapping[key] || key;
+      difyInputs[variableName] = value.trim();
+      console.log(`[Dify] Mapping: "${key}" -> "${variableName}" = "${value.trim()}"`);
+    }
+  }
+
+  // Dify Chat Flow APIのリクエストボディ
+  // inputsパラメータに変数名と値をマッピング
+  // queryパラメータは、ユーザーの質問テキスト（空でもOK、または要件をまとめたテキスト）
+  const queryParts = Object.entries(difyInputs)
     .filter(([_, value]) => value && value.trim() !== '')
     .map(([key, value]) => `${key}: ${value}`);
 
+  // queryは、要件をまとめたテキストとして使用（または空でもOK）
   const query = queryParts.length > 0 
-    ? queryParts.join('\n')
-    : '質問があります';
+    ? `キャンペーン要件:\n${queryParts.join('\n')}`
+    : 'キャンペーン要件の見積もりをお願いします';
 
   const requestBody = {
     query: query,
-    inputs: {}, // チャットフローではinputsは空でOK
+    inputs: difyInputs, // Difyチャットフローの変数名と値をマッピング
     response_mode: 'blocking',
     user: 'slack-workflow',
   };
 
   console.log('[Dify] Calling Chat Flow API:', {
     endpoint,
-    inputsCount: Object.keys(inputs).length,
+    originalInputsCount: Object.keys(inputs).length,
+    mappedInputsCount: Object.keys(difyInputs).length,
     queryLength: query.length,
-    inputKeys: Object.keys(inputs),
+    originalInputKeys: Object.keys(inputs),
+    mappedInputKeys: Object.keys(difyInputs),
+    mappedInputs: difyInputs,
     queryPreview: query.substring(0, 200),
     requestBody: JSON.stringify(requestBody, null, 2),
   });
@@ -645,8 +687,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         subtype: event.subtype,
       });
       
-      // ワークフローメッセージかどうかを確認（「新しい質問が投稿されました!」を含む）
-      const isWorkflowMessage = event.text && event.text.includes('新しい質問が投稿されました!');
+      // ワークフローメッセージかどうかを確認（「新しい質問が投稿されました!」または「新しい質問が投稿されました！」を含む）
+      // 全角と半角の感嘆符の両方に対応
+      const isWorkflowMessage = event.text && (
+        event.text.includes('新しい質問が投稿されました!') || 
+        event.text.includes('新しい質問が投稿されました！')
+      );
+      
+      console.log(`[Events-${requestId}] Workflow message check:`, {
+        hasText: !!event.text,
+        containsHalfWidth: event.text ? event.text.includes('新しい質問が投稿されました!') : false,
+        containsFullWidth: event.text ? event.text.includes('新しい質問が投稿されました！') : false,
+        isWorkflowMessage,
+        textPreview: event.text ? event.text.substring(0, 100) : 'N/A',
+      });
       
       if (isWorkflowMessage) {
         console.log(`[Events-${requestId}] Workflow message detected in app_mention event, processing...`);
@@ -662,13 +716,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           
           try {
             // メッセージからデータを抽出
-            const messageText = event.text || '';
+            let messageText = event.text || '';
             console.log(`[Events-${requestId}] Processing workflow message text, length:`, messageText.length);
+            
+            // HTMLエスケープされたタグに対応（&lt;と&gt;を<と>に変換）
+            messageText = messageText.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+            console.log(`[Events-${requestId}] After HTML unescape, length:`, messageText.length);
             
             // ワークフローのメッセージからデータを抽出
             let workflowData: Record<string, string> = {};
             
-            // <workflow_data>タグで囲まれたJSONを探す
+            // <workflow_data>タグで囲まれたJSONを探す（HTMLエスケープ解除後）
             const jsonMatch = messageText.match(/<workflow_data>([\s\S]*?)<\/workflow_data>/);
             if (jsonMatch) {
               console.log(`[Events-${requestId}] Found workflow_data tag, extracting JSON...`);
@@ -947,14 +1005,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         fullEvent: JSON.stringify(event, null, 2).substring(0, 1000),
       });
 
-      // ワークフローメッセージかどうかを確認（「新しい質問が投稿されました!」を含む）
-      const isWorkflowMessage = event.text && event.text.includes('新しい質問が投稿されました!');
+      // ワークフローメッセージかどうかを確認（「新しい質問が投稿されました!」または「新しい質問が投稿されました！」を含む）
+      // 全角と半角の感嘆符の両方に対応
+      const isWorkflowMessage = event.text && (
+        event.text.includes('新しい質問が投稿されました!') || 
+        event.text.includes('新しい質問が投稿されました！')
+      );
       
       console.log(`[Events-${requestId}] Message event analysis:`, {
         isWorkflowMessage,
         subtype: event.subtype,
         hasWorkflowText: isWorkflowMessage,
-        textContainsWorkflowMarker: event.text ? event.text.includes('新しい質問が投稿されました!') : false,
+        containsHalfWidth: event.text ? event.text.includes('新しい質問が投稿されました!') : false,
+        containsFullWidth: event.text ? event.text.includes('新しい質問が投稿されました！') : false,
       });
 
       // ワークフローのメッセージかどうかを確認（「新しい質問が投稿されました!」を含む）
@@ -973,13 +1036,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           
           try {
             // メッセージからデータを抽出
-            const messageText = event.text || '';
+            let messageText = event.text || '';
             console.log(`[Events-${requestId}] Processing message text, length:`, messageText.length);
+            
+            // HTMLエスケープされたタグに対応（&lt;と&gt;を<と>に変換）
+            messageText = messageText.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+            console.log(`[Events-${requestId}] After HTML unescape, length:`, messageText.length);
             
             // ワークフローのメッセージからデータを抽出
             let workflowData: Record<string, string> = {};
             
-            // <workflow_data>タグで囲まれたJSONを探す
+            // <workflow_data>タグで囲まれたJSONを探す（HTMLエスケープ解除後）
             const jsonMatch = messageText.match(/<workflow_data>([\s\S]*?)<\/workflow_data>/);
             if (jsonMatch) {
               console.log(`[Events-${requestId}] Found workflow_data tag, extracting JSON...`);

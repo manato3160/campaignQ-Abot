@@ -25,6 +25,7 @@ function getRawBody(req: NextApiRequest): Promise<string> {
 }
 
 // DifyチャットフローAPIを呼び出す関数
+// YMLファイルの開始ノード(1763360367489)の変数名にマッピング
 async function callDifyChatFlow(inputs: Record<string, string>): Promise<string> {
   const difyApiUrl = process.env.DIFY_API_URL;
   const difyApiKey = process.env.DIFY_API_KEY;
@@ -60,28 +61,69 @@ async function callDifyChatFlow(inputs: Record<string, string>): Promise<string>
     endpoint = `${baseUrl}/${apiVersion}/chat-messages`;
   }
 
-  // チャットフローでは、全ての入力フィールドをqueryに結合して送信
-  // 空の値を除外して、見やすい形式で結合
-  const queryParts = Object.entries(inputs)
+  // 日本語キー名をDifyチャットフローの変数名にマッピング
+  // YMLファイルの開始ノード(1763360367489)の変数定義に基づく
+  const variableMapping: Record<string, string> = {
+    '当選者': 'prize_winner',
+    '応募者情報抽出': 'applicant_extravtion', // YMLのtypoに合わせる
+    '応募者選定情報': 'applicant_select',
+    '個人情報管理': 'personal_infomation', // YMLのtypoに合わせる
+    '問い合わせ内容': 'inquiry_details',
+    'DM送付': 'send_dm',
+    '発送対応': 'shipping_correspondence',
+    'オプション': 'option',
+    '商品カテゴリ': 'product_category',
+    '商品': 'product',
+    // 念のため、英語キーもそのまま使用可能にする
+    'prize_winner': 'prize_winner',
+    'applicant_extravtion': 'applicant_extravtion',
+    'applicant_select': 'applicant_select',
+    'personal_infomation': 'personal_infomation',
+    'inquiry_details': 'inquiry_details',
+    'send_dm': 'send_dm',
+    'shipping_correspondence': 'shipping_correspondence',
+    'option': 'option',
+    'product_category': 'product_category',
+    'product': 'product',
+  };
+
+  // 日本語キーを英語変数名に変換
+  const difyInputs: Record<string, string> = {};
+  for (const [key, value] of Object.entries(inputs)) {
+    if (value && value.trim() !== '') {
+      const variableName = variableMapping[key] || key;
+      difyInputs[variableName] = value.trim();
+      console.log(`[Dify] Mapping: "${key}" -> "${variableName}" = "${value.trim()}"`);
+    }
+  }
+
+  // Dify Chat Flow APIのリクエストボディ
+  // inputsパラメータに変数名と値をマッピング
+  // queryパラメータは、ユーザーの質問テキスト（空でもOK、または要件をまとめたテキスト）
+  const queryParts = Object.entries(difyInputs)
     .filter(([_, value]) => value && value.trim() !== '')
     .map(([key, value]) => `${key}: ${value}`);
 
+  // queryは、要件をまとめたテキストとして使用（または空でもOK）
   const query = queryParts.length > 0 
-    ? queryParts.join('\n')
-    : '質問があります';
+    ? `キャンペーン要件:\n${queryParts.join('\n')}`
+    : 'キャンペーン要件の見積もりをお願いします';
 
   const requestBody = {
     query: query,
-    inputs: {}, // チャットフローではinputsは空でOK
+    inputs: difyInputs, // Difyチャットフローの変数名と値をマッピング
     response_mode: 'blocking',
     user: 'slack-workflow',
   };
 
   console.log('[Dify] Calling Chat Flow API:', {
     endpoint,
-    inputsCount: Object.keys(inputs).length,
+    originalInputsCount: Object.keys(inputs).length,
+    mappedInputsCount: Object.keys(difyInputs).length,
     queryLength: query.length,
-    inputKeys: Object.keys(inputs),
+    originalInputKeys: Object.keys(inputs),
+    mappedInputKeys: Object.keys(difyInputs),
+    mappedInputs: difyInputs,
     queryPreview: query.substring(0, 200),
     requestBody: JSON.stringify(requestBody, null, 2),
   });
@@ -92,7 +134,7 @@ async function callDifyChatFlow(inputs: Record<string, string>): Promise<string>
     response = await fetch(endpoint, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${difyApiKey.substring(0, 10)}...`,
+        'Authorization': `Bearer ${difyApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
