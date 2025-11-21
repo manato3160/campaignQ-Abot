@@ -24,7 +24,127 @@ function getRawBody(req: NextApiRequest): Promise<string> {
   });
 }
 
-// Dify APIを呼び出す関数
+// DifyチャットフローAPIを呼び出す関数（workflow.tsと同じロジック）
+async function callDifyChatFlow(inputs: Record<string, string>): Promise<string> {
+  const difyApiUrl = process.env.DIFY_API_URL;
+  const difyApiKey = process.env.DIFY_API_KEY;
+
+  console.log('[Dify] Configuration check:', {
+    hasApiUrl: !!difyApiUrl,
+    apiUrlPreview: difyApiUrl ? `${difyApiUrl.substring(0, 30)}...` : 'NOT SET',
+    hasApiKey: !!difyApiKey,
+    apiKeyPreview: difyApiKey ? `${difyApiKey.substring(0, 10)}...` : 'NOT SET',
+  });
+
+  if (!difyApiUrl || !difyApiKey) {
+    const missing = [];
+    if (!difyApiUrl) missing.push('DIFY_API_URL');
+    if (!difyApiKey) missing.push('DIFY_API_KEY');
+    console.error('[Dify] Configuration missing:', missing);
+    throw new Error(`Dify configuration is missing: ${missing.join(', ')}`);
+  }
+
+  let baseUrl = difyApiUrl.trim();
+  if (baseUrl.endsWith('/')) {
+    baseUrl = baseUrl.slice(0, -1);
+  }
+
+  const hasVersionInUrl = /\/v\d+$/.test(baseUrl);
+  let endpoint: string;
+  
+  // チャットフローAPIを使用（/chat-messagesエンドポイント）
+  if (hasVersionInUrl) {
+    endpoint = `${baseUrl}/chat-messages`;
+  } else {
+    const apiVersion = process.env.DIFY_API_VERSION || 'v1';
+    endpoint = `${baseUrl}/${apiVersion}/chat-messages`;
+  }
+
+  // チャットフローでは、全ての入力フィールドをqueryに結合して送信
+  // 空の値を除外して、見やすい形式で結合
+  const queryParts = Object.entries(inputs)
+    .filter(([_, value]) => value && value.trim() !== '')
+    .map(([key, value]) => `${key}: ${value}`);
+
+  const query = queryParts.length > 0 
+    ? queryParts.join('\n')
+    : '質問があります';
+
+  const requestBody = {
+    query: query,
+    inputs: {}, // チャットフローではinputsは空でOK
+    response_mode: 'blocking',
+    user: 'slack-workflow',
+  };
+
+  console.log('[Dify] Calling Chat Flow API:', {
+    endpoint,
+    inputsCount: Object.keys(inputs).length,
+    queryLength: query.length,
+    inputKeys: Object.keys(inputs),
+    queryPreview: query.substring(0, 200),
+    requestBody: JSON.stringify(requestBody, null, 2),
+  });
+
+  const requestStartTime = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${difyApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+    const requestElapsedTime = Date.now() - requestStartTime;
+    console.log('[Dify] Request completed:', {
+      status: response.status,
+      statusText: response.statusText,
+      elapsedTime: `${requestElapsedTime}ms`,
+      headers: Object.fromEntries(response.headers.entries()),
+    });
+  } catch (fetchError: unknown) {
+    const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
+    const errorStack = fetchError instanceof Error ? fetchError.stack : undefined;
+    console.error('[Dify] Fetch error:', {
+      error: errorMessage,
+      stack: errorStack,
+      endpoint,
+    });
+    throw new Error(`Failed to call Dify API: ${errorMessage}`);
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[Dify] API error response:', {
+      status: response.status,
+      statusText: response.statusText,
+      errorText,
+      endpoint,
+    });
+    throw new Error(`Dify API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  console.log('[Dify] API response received:', {
+    hasAnswer: !!data.answer,
+    answerLength: data.answer?.length || 0,
+    answerPreview: data.answer?.substring(0, 200) || 'N/A',
+    responseKeys: Object.keys(data),
+    fullResponse: JSON.stringify(data, null, 2).substring(0, 500),
+  });
+  
+  // チャットフローAPIのレスポンスはdata.answerに含まれる
+  const answer = data.answer || JSON.stringify(data);
+  console.log('[Dify] Returning answer:', {
+    length: answer.length,
+    preview: answer.substring(0, 200),
+  });
+  return answer;
+}
+
+// Dify APIを呼び出す関数（後方互換性のため残す）
 async function callDifyWorkflow(userInput: string): Promise<string> {
   const difyApiUrl = process.env.DIFY_API_URL;
   const difyApiKey = process.env.DIFY_API_KEY;
@@ -404,51 +524,88 @@ async function postSlackMessage(
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // 最初に必ずログを出力（リクエストが到達しているか確認）
+  const requestId = `req-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+  const timestamp = new Date().toISOString();
+  
+  console.log(`[Events-${requestId}] ====== REQUEST RECEIVED ======`);
+  console.log(`[Events-${requestId}] Endpoint: /api/slack/events`);
+  console.log(`[Events-${requestId}] Timestamp: ${timestamp}`);
+  console.log(`[Events-${requestId}] Method: ${req.method}`);
+  console.log(`[Events-${requestId}] URL: ${req.url}`);
+  
   // POSTメソッドのみ受け付ける
   if (req.method !== 'POST') {
+    console.log(`[Events-${requestId}] Method not allowed: ${req.method}`);
+    console.log(`[Events-${requestId}] ====== REQUEST ENDED (405) ======`);
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   try {
+    console.log(`[Events-${requestId}] Reading request body...`);
     // 生のリクエストボディを読み取る
     const rawBody = await getRawBody(req);
     
     if (!rawBody) {
+      console.error(`[Events-${requestId}] Empty request body`);
+      console.log(`[Events-${requestId}] ====== REQUEST ENDED (400) ======`);
       return res.status(400).json({ error: 'Empty request body' });
     }
+
+    console.log(`[Events-${requestId}] Raw body received:`, {
+      length: rawBody.length,
+      preview: rawBody.substring(0, 200),
+    });
 
     // JSONとしてパース
     let body;
     try {
       body = JSON.parse(rawBody);
+      console.log(`[Events-${requestId}] Parsed body:`, {
+        keys: Object.keys(body),
+        type: body.type,
+        hasEvent: !!body.event,
+      });
     } catch (parseError) {
-      console.error('Failed to parse JSON:', parseError);
+      console.error(`[Events-${requestId}] Failed to parse JSON:`, parseError);
+      console.log(`[Events-${requestId}] ====== REQUEST ENDED (400) ======`);
       return res.status(400).json({ error: 'Invalid JSON' });
     }
 
     // Slack URL verification (challenge) - 署名検証をスキップ
     if (body.type === 'url_verification') {
+      console.log(`[Events-${requestId}] URL verification challenge received`);
       if (!body.challenge) {
+        console.error(`[Events-${requestId}] Missing challenge parameter`);
+        console.log(`[Events-${requestId}] ====== REQUEST ENDED (400) ======`);
         return res.status(400).json({ error: 'Missing challenge parameter' });
       }
       // challengeの値をそのままプレーンテキストで返す（Slackの仕様）
+      console.log(`[Events-${requestId}] Returning challenge: ${body.challenge}`);
+      console.log(`[Events-${requestId}] ====== REQUEST ENDED (200 - Challenge) ======`);
       return res.status(200).send(body.challenge);
     }
 
     // 通常のイベントの場合、署名検証を実行
-  const timestamp = req.headers['x-slack-request-timestamp'] as string;
-  const signature = req.headers['x-slack-signature'] as string;
+    const timestampHeader = req.headers['x-slack-request-timestamp'] as string;
+    const signature = req.headers['x-slack-signature'] as string;
 
-    if (!timestamp || !signature) {
+    if (!timestampHeader || !signature) {
+      console.error(`[Events-${requestId}] Missing required headers:`, {
+        hasTimestamp: !!timestampHeader,
+        hasSignature: !!signature,
+      });
+      console.log(`[Events-${requestId}] ====== REQUEST ENDED (401) ======`);
       return res.status(401).json({ error: 'Missing required headers' });
     }
 
     // 署名検証用のbasestringは生のボディを使用
-    const basestring = `v0:${timestamp}:${rawBody}`;
+    const basestring = `v0:${timestampHeader}:${rawBody}`;
     const signingSecret = process.env.SLACK_SIGNING_SECRET;
 
     if (!signingSecret) {
-      console.error('SLACK_SIGNING_SECRET is not set');
+      console.error(`[Events-${requestId}] SLACK_SIGNING_SECRET is not set`);
+      console.log(`[Events-${requestId}] ====== REQUEST ENDED (500) ======`);
       return res.status(500).json({ error: 'Server configuration error' });
     }
 
@@ -456,34 +613,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     .update(basestring, 'utf8')
     .digest('hex');
 
-  if (mySignature !== signature) {
-      console.error('Signature verification failed', {
-        expected: signature,
-        calculated: mySignature,
+    if (mySignature !== signature) {
+      console.error(`[Events-${requestId}] Signature verification failed`, {
+        expected: signature.substring(0, 20) + '...',
+        calculated: mySignature.substring(0, 20) + '...',
       });
+      console.log(`[Events-${requestId}] ====== REQUEST ENDED (401) ======`);
       return res.status(401).json({ error: 'Verification failed' });
-  }
+    }
 
-  // Event handling
+    console.log(`[Events-${requestId}] Signature verified successfully`);
+
+    // Event handling
     const event = body.event;
     
-    console.log('Received Slack event:', {
+    console.log(`[Events-${requestId}] Received Slack event:`, {
       type: body.type,
       eventType: event?.type,
       eventSubtype: event?.subtype,
       hasEvent: !!event,
+      eventKeys: event ? Object.keys(event) : [],
     });
 
   // Bot がメンションされた場合の処理
     if (event && event.type === 'app_mention') {
-      console.log('App mention event detected:', {
+      console.log(`[Events-${requestId}] App mention event detected:`, {
         channel: event.channel,
         user: event.user,
-        text: event.text,
+        text: event.text ? event.text.substring(0, 200) : 'N/A',
         ts: event.ts,
       });
       // Bot自身のメッセージは無視
       if (event.subtype === 'bot_message') {
+        console.log(`[Events-${requestId}] Ignoring bot's own message`);
+        console.log(`[Events-${requestId}] ====== REQUEST ENDED (200) ======`);
         return res.status(200).end();
       }
 
@@ -491,14 +654,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // 先に200を返してからバックグラウンドで処理を実行
       res.status(200).end();
       
-      console.log('Sent 200 response, starting background processing');
+      console.log(`[Events-${requestId}] Sent 200 response, starting background processing`);
 
       // バックグラウンドでDify APIを呼び出し、結果をSlackに投稿
       // waitUntil()を使用して、Vercelの実行時間制限内でバックグラウンド処理を実行
       const backgroundProcess = (async () => {
         const processStartTime = Date.now();
         try {
-          console.log('Background processing started', {
+          console.log(`[Events-${requestId}] Background processing started`, {
             timestamp: new Date().toISOString(),
             channel: event.channel,
             ts: event.ts,
@@ -510,6 +673,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             .trim();
 
           if (!messageText) {
+            console.log(`[Events-${requestId}] Message text is empty`);
             await postSlackMessage(
               event.channel,
               'メッセージが空です。質問を入力してください。',
@@ -519,18 +683,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return;
           }
 
-          console.log('Processing app mention:', {
+          console.log(`[Events-${requestId}] Processing app mention:`, {
             channel: event.channel,
             user: event.user,
-            text: messageText,
+            textLength: messageText.length,
+            textPreview: messageText.substring(0, 100),
           });
 
           // Dify APIを呼び出し
-          console.log('About to call Dify API with message:', messageText.substring(0, 100));
+          console.log(`[Events-${requestId}] About to call Dify API with message:`, messageText.substring(0, 100));
           const difyResponse = await callDifyWorkflow(messageText);
-          console.log('Dify API call completed, response length:', difyResponse.length);
+          console.log(`[Events-${requestId}] Dify API call completed, response length:`, difyResponse.length);
 
           // Slackに結果を投稿（スレッドで返信、質問者をメンション）
+          console.log(`[Events-${requestId}] Posting to Slack channel:`, event.channel);
           await postSlackMessage(
             event.channel,
             difyResponse,
@@ -539,13 +705,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           );
 
           const processElapsedTime = Date.now() - processStartTime;
-          console.log('Successfully processed app mention', {
+          console.log(`[Events-${requestId}] Successfully processed app mention`, {
             elapsedTime: `${processElapsedTime}ms`,
           });
         } catch (error) {
           const processElapsedTime = Date.now() - processStartTime;
-          console.error('Error processing app mention:', {
-            error,
+          console.error(`[Events-${requestId}] Error processing app mention:`, {
+            error: error instanceof Error ? error.message : String(error),
             errorName: error instanceof Error ? error.name : 'Unknown',
             errorMessage: error instanceof Error ? error.message : 'Unknown error',
             errorStack: error instanceof Error ? error.stack : undefined,
@@ -592,16 +758,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           
           // Slackへのエラーメッセージ送信を試みる（失敗してもログに記録、質問者をメンション）
           try {
+            console.log(`[Events-${requestId}] Posting error message to Slack...`);
             await postSlackMessage(
               event.channel,
               errorMessage,
               event.ts,
               event.user
             );
-            console.log('Error message sent to Slack successfully');
+            console.log(`[Events-${requestId}] Error message sent to Slack successfully`);
           } catch (slackError) {
-            console.error('Failed to post error message to Slack:', {
-              slackError,
+            console.error(`[Events-${requestId}] Failed to post error message to Slack:`, {
+              error: slackError instanceof Error ? slackError.message : String(slackError),
               errorName: slackError instanceof Error ? slackError.name : 'Unknown',
               errorMessage: slackError instanceof Error ? slackError.message : 'Unknown error',
               errorStack: slackError instanceof Error ? slackError.stack : undefined,
@@ -613,53 +780,83 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })();
 
       // waitUntil()を使用して、Vercelの実行時間制限内でバックグラウンド処理を実行
-      // Next.jsのAPI Routesでは、waitUntil()はresオブジェクトから取得する必要がある可能性があるが、
-      // @vercel/functionsから直接インポートしたwaitUntil()を使用
+      console.log(`[Events-${requestId}] Calling waitUntil for background process...`);
       waitUntil(backgroundProcess);
+      console.log(`[Events-${requestId}] waitUntil called, handler will return`);
+      console.log(`[Events-${requestId}] ====== HANDLER RETURNING ======`);
 
       // バックグラウンド処理を開始したので、ここでreturn
       return;
     }
 
     // ワークフローからのメッセージを処理
-    if (event && event.type === 'message' && event.subtype === 'bot_message') {
-      console.log('Bot message event detected:', {
+    // subtypeが'bot_message'またはundefinedの場合を考慮（ワークフローメッセージはsubtypeがない場合がある）
+    if (event && event.type === 'message' && (event.subtype === 'bot_message' || event.subtype === undefined)) {
+      console.log(`[Events-${requestId}] Bot message event detected:`, {
         channel: event.channel,
-        text: event.text,
+        text: event.text ? event.text.substring(0, 200) : 'N/A',
         ts: event.ts,
         bot_id: event.bot_id,
+        subtype: event.subtype,
+        hasText: !!event.text,
       });
 
       // ワークフローのメッセージかどうかを確認（「新しい質問が投稿されました!」で始まる）
       if (event.text && event.text.includes('新しい質問が投稿されました!')) {
-        console.log('Workflow message detected, processing...');
+        console.log(`[Events-${requestId}] Workflow message detected, processing...`);
         
         // 先に200を返す
         res.status(200).end();
+        console.log(`[Events-${requestId}] Response sent, background process will continue`);
         
         // バックグラウンドで処理
         const workflowProcess = (async () => {
+          const processStartTime = Date.now();
+          console.log(`[Events-${requestId}] Background workflow process started at:`, new Date().toISOString());
+          
           try {
             // メッセージからデータを抽出
-            // メッセージの構造を解析して、各フィールドの値を取得
             const messageText = event.text || '';
+            console.log(`[Events-${requestId}] Processing message text, length:`, messageText.length);
             
-            // ワークフローのメッセージからデータを抽出する関数
-            // 方法1: JSONデータがメッセージに含まれている場合（推奨）
+            // ワークフローのメッセージからデータを抽出
             let workflowData: Record<string, string> = {};
             
             // <workflow_data>タグで囲まれたJSONを探す
             const jsonMatch = messageText.match(/<workflow_data>([\s\S]*?)<\/workflow_data>/);
             if (jsonMatch) {
+              console.log(`[Events-${requestId}] Found workflow_data tag, extracting JSON...`);
               try {
-                workflowData = JSON.parse(jsonMatch[1]);
-                console.log('Extracted workflow data from JSON:', workflowData);
+                const jsonText = jsonMatch[1].trim();
+                workflowData = JSON.parse(jsonText);
+                console.log(`[Events-${requestId}] Extracted workflow data from JSON:`, {
+                  keys: Object.keys(workflowData),
+                  keyCount: Object.keys(workflowData).length,
+                });
+                
+                // 「への回答」というプレースホルダー値を除外
+                const filteredData: Record<string, string> = {};
+                for (const [key, value] of Object.entries(workflowData)) {
+                  const strValue = String(value);
+                  // 「への回答」で終わる値はプレースホルダーなので除外
+                  if (!strValue.endsWith('への回答') && strValue.trim() !== '') {
+                    filteredData[key] = strValue;
+                  }
+                }
+                workflowData = filteredData;
+                console.log(`[Events-${requestId}] Filtered workflow data (removed placeholders):`, {
+                  keys: Object.keys(workflowData),
+                  keyCount: Object.keys(workflowData).length,
+                });
               } catch (parseError) {
-                console.error('Failed to parse JSON data:', parseError);
+                console.error(`[Events-${requestId}] Failed to parse JSON data:`, {
+                  error: parseError instanceof Error ? parseError.message : String(parseError),
+                  jsonText: jsonMatch[1].substring(0, 200),
+                });
               }
             } else {
+              console.log(`[Events-${requestId}] No workflow_data tag found, trying text extraction...`);
               // 方法2: メッセージテキストから各フィールドを抽出
-              // 実際のメッセージ構造に合わせて調整が必要
               const fields = [
                 '概要', '当選者', '応募者情報抽出', '応募者選定情報',
                 '個人情報管理', '問い合わせ内容', 'DM送付', '発送対応',
@@ -672,48 +869,85 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 const match = messageText.match(regex);
                 if (match && match[0]) {
                   const value = match[0].replace(new RegExp(`${field}[：:]`), '').trim();
-                  if (value) {
+                  // 「への回答」で終わる値は除外
+                  if (value && !value.endsWith('への回答')) {
                     workflowData[field] = value;
                   }
                 }
               });
               
-              console.log('Extracted workflow data from text:', workflowData);
+              console.log(`[Events-${requestId}] Extracted workflow data from text:`, {
+                keys: Object.keys(workflowData),
+                keyCount: Object.keys(workflowData).length,
+              });
             }
             
-            // Dify APIを呼び出す（workflow.tsのcallDifyChatFlowと同じロジック）
-            // ここでは簡易的にcallDifyWorkflowを使用
+            // Dify APIを呼び出す（callDifyChatFlowを使用）
             if (Object.keys(workflowData).length > 0) {
-              const query = Object.entries(workflowData)
-                .filter(([_, value]) => value && value.trim() !== '')
-                .map(([key, value]) => `${key}: ${value}`)
-                .join('\n');
+              console.log(`[Events-${requestId}] Calling Dify Chat Flow API with ${Object.keys(workflowData).length} inputs...`);
+              const difyResponse = await callDifyChatFlow(workflowData);
+              console.log(`[Events-${requestId}] Dify API response received:`, {
+                responseLength: difyResponse.length,
+                preview: difyResponse.substring(0, 100),
+              });
               
-              if (query) {
-                const difyResponse = await callDifyWorkflow(query);
-                
-                // Slackに結果を投稿
-                await postSlackMessage(
-                  event.channel,
-                  `📋 *肥田さんへの質問の回答*\n\n${difyResponse}`,
-                  event.ts
-                );
-              }
+              // Slackに結果を投稿
+              console.log(`[Events-${requestId}] Posting to Slack channel:`, event.channel);
+              await postSlackMessage(
+                event.channel,
+                `📋 *肥田さんへの質問の回答*\n\n${difyResponse}`,
+                event.ts
+              );
+              
+              const elapsedTime = Date.now() - processStartTime;
+              console.log(`[Events-${requestId}] Workflow processed successfully`, {
+                elapsedTime: `${elapsedTime}ms`,
+              });
+            } else {
+              console.warn(`[Events-${requestId}] No workflow data extracted, skipping Dify API call`);
             }
           } catch (error) {
-            console.error('Error processing workflow message:', error);
+            const elapsedTime = Date.now() - processStartTime;
+            console.error(`[Events-${requestId}] Error processing workflow message:`, {
+              error: error instanceof Error ? error.message : String(error),
+              stack: error instanceof Error ? error.stack : undefined,
+              elapsedTime: `${elapsedTime}ms`,
+            });
+            
+            // エラーをSlackに通知
+            try {
+              await postSlackMessage(
+                event.channel,
+                `❌ エラーが発生しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                event.ts
+              );
+            } catch (slackError) {
+              console.error(`[Events-${requestId}] Failed to post error to Slack:`, slackError);
+            }
           }
         })();
         
+        console.log(`[Events-${requestId}] Calling waitUntil for workflow process...`);
         waitUntil(workflowProcess);
+        console.log(`[Events-${requestId}] waitUntil called, handler will return`);
+        console.log(`[Events-${requestId}] ====== HANDLER RETURNING ======`);
         return;
+      } else {
+        console.log(`[Events-${requestId}] Bot message detected but not a workflow message (does not contain '新しい質問が投稿されました!')`);
       }
     }
 
     // その他のイベントタイプは正常に受け取ったことを返す
+    console.log(`[Events-${requestId}] Other event type, returning 200`);
+    console.log(`[Events-${requestId}] ====== REQUEST ENDED (200) ======`);
     res.status(200).end();
   } catch (error) {
-    console.error('Error processing Slack event:', error);
+    console.error(`[Events-${requestId}] ====== TOP LEVEL ERROR ======`);
+    console.error(`[Events-${requestId}] Error processing Slack event:`, {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    console.log(`[Events-${requestId}] ====== REQUEST ENDED (500) ======`);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
