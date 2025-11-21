@@ -130,6 +130,13 @@ async function callDifyChatFlow(inputs: Record<string, string>): Promise<string>
 
   const requestStartTime = Date.now();
   let response: Response;
+  
+  console.log('[Dify] Starting fetch request...', {
+    endpoint,
+    timestamp: new Date().toISOString(),
+    requestBodySize: JSON.stringify(requestBody).length,
+  });
+  
   try {
     response = await fetch(endpoint, {
       method: 'POST',
@@ -139,42 +146,65 @@ async function callDifyChatFlow(inputs: Record<string, string>): Promise<string>
       },
       body: JSON.stringify(requestBody),
     });
+    
     const requestElapsedTime = Date.now() - requestStartTime;
-    console.log('[Dify] Request completed:', {
+    console.log('[Dify] Fetch request completed:', {
       status: response.status,
       statusText: response.statusText,
       elapsedTime: `${requestElapsedTime}ms`,
+      ok: response.ok,
       headers: Object.fromEntries(response.headers.entries()),
+      timestamp: new Date().toISOString(),
     });
   } catch (fetchError: unknown) {
+    const requestElapsedTime = Date.now() - requestStartTime;
     const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
     const errorStack = fetchError instanceof Error ? fetchError.stack : undefined;
-    console.error('[Dify] Fetch error:', {
+    console.error('[Dify] Fetch error occurred:', {
       error: errorMessage,
+      errorName: fetchError instanceof Error ? fetchError.name : 'Unknown',
       stack: errorStack,
       endpoint,
+      elapsedTime: `${requestElapsedTime}ms`,
+      timestamp: new Date().toISOString(),
     });
     throw new Error(`Failed to call Dify API: ${errorMessage}`);
   }
 
+  console.log('[Dify] Processing response...', {
+    status: response.status,
+    ok: response.ok,
+    timestamp: new Date().toISOString(),
+  });
+  
   if (!response.ok) {
+    console.error('[Dify] Response is not OK, reading error text...');
     const errorText = await response.text();
     console.error('[Dify] API error response:', {
       status: response.status,
       statusText: response.statusText,
       errorText,
+      errorTextLength: errorText.length,
       endpoint,
+      timestamp: new Date().toISOString(),
     });
     throw new Error(`Dify API error: ${response.status} - ${errorText}`);
   }
 
+  console.log('[Dify] Response is OK, parsing JSON...', {
+    timestamp: new Date().toISOString(),
+  });
+  
   const data = await response.json();
-  console.log('[Dify] API response received:', {
+  console.log('[Dify] JSON parsed successfully:', {
     hasAnswer: !!data.answer,
     answerLength: data.answer?.length || 0,
     answerPreview: data.answer?.substring(0, 200) || 'N/A',
     responseKeys: Object.keys(data),
+    hasMessageId: !!data.message_id,
+    hasConversationId: !!data.conversation_id,
     fullResponse: JSON.stringify(data, null, 2).substring(0, 500),
+    timestamp: new Date().toISOString(),
   });
   
   // チャットフローAPIのレスポンスはdata.answerに含まれる
@@ -182,6 +212,7 @@ async function callDifyChatFlow(inputs: Record<string, string>): Promise<string>
   console.log('[Dify] Returning answer:', {
     length: answer.length,
     preview: answer.substring(0, 200),
+    timestamp: new Date().toISOString(),
   });
   return answer;
 }
