@@ -640,12 +640,154 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       console.log(`[Events-${requestId}] App mention event detected:`, {
         channel: event.channel,
         user: event.user,
-        text: event.text ? event.text.substring(0, 200) : 'N/A',
+        text: event.text ? event.text.substring(0, 500) : 'N/A',
         ts: event.ts,
+        subtype: event.subtype,
       });
-      // Bot自身のメッセージは無視
+      
+      // ワークフローメッセージかどうかを確認（「新しい質問が投稿されました!」を含む）
+      const isWorkflowMessage = event.text && event.text.includes('新しい質問が投稿されました!');
+      
+      if (isWorkflowMessage) {
+        console.log(`[Events-${requestId}] Workflow message detected in app_mention event, processing...`);
+        
+        // 先に200を返す
+        res.status(200).end();
+        console.log(`[Events-${requestId}] Response sent, background workflow process will continue`);
+        
+        // バックグラウンドでワークフローメッセージを処理
+        const workflowProcess = (async () => {
+          const processStartTime = Date.now();
+          console.log(`[Events-${requestId}] Background workflow process started at:`, new Date().toISOString());
+          
+          try {
+            // メッセージからデータを抽出
+            const messageText = event.text || '';
+            console.log(`[Events-${requestId}] Processing workflow message text, length:`, messageText.length);
+            
+            // ワークフローのメッセージからデータを抽出
+            let workflowData: Record<string, string> = {};
+            
+            // <workflow_data>タグで囲まれたJSONを探す
+            const jsonMatch = messageText.match(/<workflow_data>([\s\S]*?)<\/workflow_data>/);
+            if (jsonMatch) {
+              console.log(`[Events-${requestId}] Found workflow_data tag, extracting JSON...`);
+              try {
+                const jsonText = jsonMatch[1].trim();
+                workflowData = JSON.parse(jsonText);
+                console.log(`[Events-${requestId}] Extracted workflow data from JSON:`, {
+                  keys: Object.keys(workflowData),
+                  keyCount: Object.keys(workflowData).length,
+                });
+                
+                // 「への回答」というプレースホルダー値を除外
+                const filteredData: Record<string, string> = {};
+                for (const [key, value] of Object.entries(workflowData)) {
+                  const strValue = String(value);
+                  // 「への回答」で終わる値はプレースホルダーなので除外
+                  if (!strValue.endsWith('への回答') && strValue.trim() !== '') {
+                    filteredData[key] = strValue;
+                  }
+                }
+                workflowData = filteredData;
+                console.log(`[Events-${requestId}] Filtered workflow data (removed placeholders):`, {
+                  keys: Object.keys(workflowData),
+                  keyCount: Object.keys(workflowData).length,
+                  data: workflowData,
+                });
+              } catch (parseError) {
+                console.error(`[Events-${requestId}] Failed to parse JSON data:`, {
+                  error: parseError instanceof Error ? parseError.message : String(parseError),
+                  jsonText: jsonMatch[1].substring(0, 500),
+                });
+              }
+            } else {
+              console.log(`[Events-${requestId}] No workflow_data tag found, trying text extraction...`);
+              // 方法2: メッセージテキストから各フィールドを抽出
+              const fields = [
+                '概要', '当選者', '応募者情報抽出', '応募者選定情報',
+                '個人情報管理', '問い合わせ内容', 'DM送付', '発送対応',
+                'オプション', '商品カテゴリ', '商品'
+              ];
+              
+              fields.forEach(field => {
+                // フィールド名の後に値が続くパターンを探す
+                const regex = new RegExp(`${field}[：:]([^\\n]+)`, 'g');
+                const match = messageText.match(regex);
+                if (match && match[0]) {
+                  const value = match[0].replace(new RegExp(`${field}[：:]`), '').trim();
+                  // 「への回答」で終わる値は除外
+                  if (value && !value.endsWith('への回答')) {
+                    workflowData[field] = value;
+                  }
+                }
+              });
+              
+              console.log(`[Events-${requestId}] Extracted workflow data from text:`, {
+                keys: Object.keys(workflowData),
+                keyCount: Object.keys(workflowData).length,
+              });
+            }
+            
+            // Dify APIを呼び出す（callDifyChatFlowを使用）
+            if (Object.keys(workflowData).length > 0) {
+              console.log(`[Events-${requestId}] Calling Dify Chat Flow API with ${Object.keys(workflowData).length} inputs...`);
+              const difyResponse = await callDifyChatFlow(workflowData);
+              console.log(`[Events-${requestId}] Dify API response received:`, {
+                responseLength: difyResponse.length,
+                preview: difyResponse.substring(0, 100),
+              });
+              
+              // Slackに結果を投稿（ワークフローメッセージのスレッドに返信）
+              console.log(`[Events-${requestId}] Posting to Slack channel:`, {
+                channel: event.channel,
+                threadTs: event.ts,
+                messageTs: event.ts,
+              });
+              await postSlackMessage(
+                event.channel,
+                `📋 *肥田さんへの質問の回答*\n\n${difyResponse}`,
+                event.ts // ワークフローメッセージのtsをthreadTsとして使用してスレッド返信
+              );
+              
+              const elapsedTime = Date.now() - processStartTime;
+              console.log(`[Events-${requestId}] Workflow processed successfully`, {
+                elapsedTime: `${elapsedTime}ms`,
+              });
+            } else {
+              console.warn(`[Events-${requestId}] No workflow data extracted, skipping Dify API call`);
+            }
+          } catch (error) {
+            const elapsedTime = Date.now() - processStartTime;
+            console.error(`[Events-${requestId}] Error processing workflow message:`, {
+              error: error instanceof Error ? error.message : String(error),
+              stack: error instanceof Error ? error.stack : undefined,
+              elapsedTime: `${elapsedTime}ms`,
+            });
+            
+            // エラーをSlackに通知
+            try {
+              await postSlackMessage(
+                event.channel,
+                `❌ エラーが発生しました: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                event.ts
+              );
+            } catch (slackError) {
+              console.error(`[Events-${requestId}] Failed to post error to Slack:`, slackError);
+            }
+          }
+        })();
+        
+        console.log(`[Events-${requestId}] Calling waitUntil for workflow process...`);
+        waitUntil(workflowProcess);
+        console.log(`[Events-${requestId}] waitUntil called, handler will return`);
+        console.log(`[Events-${requestId}] ====== HANDLER RETURNING ======`);
+        return;
+      }
+      
+      // Bot自身のメッセージは無視（ワークフローメッセージ以外）
       if (event.subtype === 'bot_message') {
-        console.log(`[Events-${requestId}] Ignoring bot's own message`);
+        console.log(`[Events-${requestId}] Ignoring bot's own message (not a workflow message)`);
         console.log(`[Events-${requestId}] ====== REQUEST ENDED (200) ======`);
         return res.status(200).end();
       }
