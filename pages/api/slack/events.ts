@@ -790,19 +790,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // ワークフローからのメッセージを処理
-    // subtypeが'bot_message'またはundefinedの場合を考慮（ワークフローメッセージはsubtypeがない場合がある）
-    if (event && event.type === 'message' && (event.subtype === 'bot_message' || event.subtype === undefined)) {
-      console.log(`[Events-${requestId}] Bot message event detected:`, {
+    // すべてのメッセージイベントをログに記録（デバッグ用）
+    if (event && event.type === 'message') {
+      console.log(`[Events-${requestId}] Message event detected:`, {
         channel: event.channel,
         text: event.text ? event.text.substring(0, 200) : 'N/A',
         ts: event.ts,
         bot_id: event.bot_id,
         subtype: event.subtype,
         hasText: !!event.text,
+        eventKeys: Object.keys(event),
+      });
+
+      // subtypeが'bot_message'またはundefinedの場合、またはワークフローメッセージの場合を処理
+      // ワークフローメッセージはsubtypeがない場合や、特定のsubtypeを持つ場合がある
+      const isBotMessage = event.subtype === 'bot_message' || event.subtype === undefined;
+      const isWorkflowMessage = event.text && event.text.includes('新しい質問が投稿されました!');
+      
+      console.log(`[Events-${requestId}] Message event analysis:`, {
+        isBotMessage,
+        isWorkflowMessage,
+        subtype: event.subtype,
+        hasWorkflowText: isWorkflowMessage,
       });
 
       // ワークフローのメッセージかどうかを確認（「新しい質問が投稿されました!」で始まる）
-      if (event.text && event.text.includes('新しい質問が投稿されました!')) {
+      if (isWorkflowMessage) {
         console.log(`[Events-${requestId}] Workflow message detected, processing...`);
         
         // 先に200を返す
@@ -933,7 +946,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         console.log(`[Events-${requestId}] ====== HANDLER RETURNING ======`);
         return;
       } else {
-        console.log(`[Events-${requestId}] Bot message detected but not a workflow message (does not contain '新しい質問が投稿されました!')`);
+        console.log(`[Events-${requestId}] Message detected but not a workflow message:`, {
+          hasText: !!event.text,
+          textPreview: event.text ? event.text.substring(0, 100) : 'N/A',
+          containsWorkflowText: event.text ? event.text.includes('新しい質問が投稿されました!') : false,
+        });
       }
     }
 
