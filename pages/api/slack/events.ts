@@ -792,29 +792,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // ワークフローからのメッセージを処理
     // すべてのメッセージイベントをログに記録（デバッグ用）
     if (event && event.type === 'message') {
-      console.log(`[Events-${requestId}] Message event detected:`, {
+      console.log(`[Events-${requestId}] ====== MESSAGE EVENT DETECTED ======`);
+      console.log(`[Events-${requestId}] Message event details:`, {
         channel: event.channel,
-        text: event.text ? event.text.substring(0, 200) : 'N/A',
+        text: event.text ? event.text.substring(0, 500) : 'N/A',
+        textLength: event.text ? event.text.length : 0,
         ts: event.ts,
         bot_id: event.bot_id,
         subtype: event.subtype,
         hasText: !!event.text,
         eventKeys: Object.keys(event),
+        fullEvent: JSON.stringify(event, null, 2).substring(0, 1000),
       });
 
-      // subtypeが'bot_message'またはundefinedの場合、またはワークフローメッセージの場合を処理
-      // ワークフローメッセージはsubtypeがない場合や、特定のsubtypeを持つ場合がある
-      const isBotMessage = event.subtype === 'bot_message' || event.subtype === undefined;
+      // ワークフローメッセージかどうかを確認（「新しい質問が投稿されました!」を含む）
       const isWorkflowMessage = event.text && event.text.includes('新しい質問が投稿されました!');
       
       console.log(`[Events-${requestId}] Message event analysis:`, {
-        isBotMessage,
         isWorkflowMessage,
         subtype: event.subtype,
         hasWorkflowText: isWorkflowMessage,
+        textContainsWorkflowMarker: event.text ? event.text.includes('新しい質問が投稿されました!') : false,
       });
 
-      // ワークフローのメッセージかどうかを確認（「新しい質問が投稿されました!」で始まる）
+      // ワークフローのメッセージかどうかを確認（「新しい質問が投稿されました!」を含む）
+      // subtypeに関係なく、テキストに「新しい質問が投稿されました!」が含まれていれば処理
       if (isWorkflowMessage) {
         console.log(`[Events-${requestId}] Workflow message detected, processing...`);
         
@@ -904,12 +906,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 preview: difyResponse.substring(0, 100),
               });
               
-              // Slackに結果を投稿
-              console.log(`[Events-${requestId}] Posting to Slack channel:`, event.channel);
+              // Slackに結果を投稿（ワークフローメッセージのスレッドに返信）
+              console.log(`[Events-${requestId}] Posting to Slack channel:`, {
+                channel: event.channel,
+                threadTs: event.ts,
+                messageTs: event.ts,
+              });
               await postSlackMessage(
                 event.channel,
                 `📋 *肥田さんへの質問の回答*\n\n${difyResponse}`,
-                event.ts
+                event.ts // ワークフローメッセージのtsをthreadTsとして使用してスレッド返信
               );
               
               const elapsedTime = Date.now() - processStartTime;
@@ -948,10 +954,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       } else {
         console.log(`[Events-${requestId}] Message detected but not a workflow message:`, {
           hasText: !!event.text,
-          textPreview: event.text ? event.text.substring(0, 100) : 'N/A',
+          textPreview: event.text ? event.text.substring(0, 200) : 'N/A',
           containsWorkflowText: event.text ? event.text.includes('新しい質問が投稿されました!') : false,
+          subtype: event.subtype,
+          bot_id: event.bot_id,
         });
+        console.log(`[Events-${requestId}] ====== MESSAGE EVENT IGNORED (Not workflow message) ======`);
       }
+    } else if (event && event.type !== 'message') {
+      console.log(`[Events-${requestId}] Non-message event type:`, {
+        eventType: event.type,
+        eventSubtype: event.subtype,
+        eventKeys: Object.keys(event),
+      });
     }
 
     // その他のイベントタイプは正常に受け取ったことを返す
